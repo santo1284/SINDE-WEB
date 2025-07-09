@@ -6,76 +6,12 @@ import {
   GoogleAuthProvider, 
   FacebookAuthProvider,
   sendPasswordResetEmail,
-  onAuthStateChanged,
-  signOut
+  onAuthStateChanged
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { auth } from './firebase-config'; // Importar desde el archivo de configuración
 
-// ⚠️ IMPORTANTE: Reemplaza esta importación con tu configuración real de Firebase
-// import { auth, db } from './firebase-config';
-
-// Configuración temporal de Firebase (REEMPLAZA CON TU CONFIGURACIÓN REAL)
-const firebaseConfig = {
-  apiKey: "AIzaSyCxjuEfWAO73CCvvkWyNA3dXGHc_EXOBMo",
-  authDomain: "sindesparches-1ebbd.firebaseapp.com",
-  projectId: "sindesparches-1ebbd",
-  storageBucket: "sindesparches-1ebbd.firebasestorage.app",
-  messagingSenderId: "1022521936843",
-  appId: "1:1022521936843:web:46a97acb2553787451844e",
-  measurementId: "G-794723RWZ9"
-};
-
-
- import { initializeApp } from 'firebase/app';
- import { getAuth } from 'firebase/auth';
- import { getFirestore } from 'firebase/firestore'; 
- const app = initializeApp(firebaseConfig);
- export const auth = getAuth(app);
- export const db = getFirestore(app);
-
-
-// Funciones para usar Firebase real (descomenta cuando tengas tu configuración)
-const useFirebase = true; 
-
-// Componente de página de usuario autenticado
-const AuthenticatedUserPage = ({ user, onLogout }) => {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 text-center">
-        <div className="w-20 h-20 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full flex items-center justify-center mx-auto mb-6">
-          <CheckCircle className="w-10 h-10 text-white" />
-        </div>
-        
-        <h1 className="text-2xl font-bold text-gray-800 mb-2">
-          ¡Bienvenido!
-        </h1>
-        
-        <p className="text-gray-600 mb-6">
-          Has iniciado sesión exitosamente
-        </p>
-        
-        <div className="bg-gradient-to-r from-emerald-100 to-teal-100 rounded-2xl p-4 mb-6">
-          <p className="text-sm text-gray-700">
-            <span className="font-semibold">Email:</span> {user.email}
-          </p>
-          <p className="text-sm text-gray-700">
-            <span className="font-semibold">ID:</span> {user.uid}
-          </p>
-        </div>
-        
-        <button
-          onClick={onLogout}
-          className="w-full bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105"
-        >
-          Cerrar Sesión
-        </button>
-      </div>
-    </div>
-  );
-};
-
-// Componente principal de Login
-const LoginScreen = () => {
+// Componente Login
+const LoginScreen = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -83,30 +19,18 @@ const LoginScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
   const [showSuccess, setShowSuccess] = useState(false);
 
   // Verificar autenticación al cargar
   useEffect(() => {
-    if (useFirebase) {
-      // Listener de autenticación con Firebase real
-      const unsubscribe = onAuthStateChanged(auth, (user) => {
-        if (user) {
-          setCurrentUser(user);
-          setIsAuthenticated(true);
-          processUserAfterAuth(user);
-        } else {
-          setCurrentUser(null);
-          setIsAuthenticated(false);
-        }
-      });
-      return () => unsubscribe();
-    } else {
-      // Verificación con simulación
-      checkAuthState();
-    }
-  }, []);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // Usuario ya autenticado, redirigir a Home
+        onLoginSuccess(user);
+      }
+    });
+    return () => unsubscribe();
+  }, [onLoginSuccess]);
 
   // Limpiar mensaje de error después de 5 segundos
   useEffect(() => {
@@ -117,51 +41,6 @@ const LoginScreen = () => {
       return () => clearTimeout(timer);
     }
   }, [errorMessage]);
-
-  const checkAuthState = () => {
-    if (mockAuth.currentUser) {
-      setCurrentUser(mockAuth.currentUser);
-      setIsAuthenticated(true);
-    }
-  };
-
-  const processUserAfterAuth = async (user) => {
-    try {
-      if (!user) {
-        setErrorMessage('Error: No se pudo obtener el usuario');
-        return;
-      }
-
-      const uid = user.uid;
-      const userEmail = user.email || '';
-
-      // Verificar si tiene contraseña (solo para autenticación social)
-      const hasPassword = user.providerData.some(provider => provider.providerId === 'password');
-      
-      if (!hasPassword && user.providerData.length > 0) {
-        // Usuario registrado con redes sociales sin contraseña
-        console.log('Usuario de redes sociales sin contraseña');
-        // Aquí podrías redirigir a una página para establecer contraseña si es necesario
-        // onNavigateToSetPassword(userEmail);
-      }
-
-      // Verificar si el usuario tiene perfil completo en Firestore
-      if (useFirebase) {
-        const perfilDoc = await getDoc(doc(db, 'perfil', uid));
-        
-        if (perfilDoc.exists() && Object.keys(perfilDoc.data()).length > 0) {
-          console.log('Perfil completo encontrado en Firestore');
-          // Aquí podrías navegar a la página principal si tienes navegación
-        } else {
-          console.log('Perfil no encontrado en Firestore');
-          // Aquí podrías navegar a la página de perfil si es necesario
-        }
-      }
-    } catch (error) {
-      console.error('Error al verificar datos del usuario:', error);
-      setErrorMessage('Error al acceder a los datos del perfil');
-    }
-  };
 
   const handleEmailLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -178,58 +57,37 @@ const LoginScreen = () => {
     setErrorMessage('');
     
     try {
-      let userCredential;
-      
-      if (useFirebase) {
-        // Autenticación con Firebase real
-        userCredential = await signInWithEmailAndPassword(auth, email, password);
-      } else {
-        // Simulación para pruebas
-        userCredential = await mockAuth.signInWithEmailAndPassword(email, password);
-      }
-      
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       console.log('Autenticación exitosa con Firebase');
       
-      setCurrentUser(userCredential.user);
       setShowSuccess(true);
       
-      // Procesar datos del usuario después de la autenticación
-      if (useFirebase) {
-        await processUserAfterAuth(userCredential.user);
-      }
-      
-      // Simular redirección después de mostrar éxito
+      // Redirigir después de mostrar éxito
       setTimeout(() => {
-        setIsAuthenticated(true);
-        setShowSuccess(false);
+        onLoginSuccess(userCredential.user);
       }, 2000);
       
     } catch (error) {
       console.error('Error de autenticación:', error);
       
-      // Manejo de errores específicos de Firebase
-      if (useFirebase) {
-        switch (error.code) {
-          case 'auth/user-not-found':
-            setErrorMessage('No existe una cuenta con este email');
-            break;
-          case 'auth/wrong-password':
-            setErrorMessage('Contraseña incorrecta');
-            break;
-          case 'auth/invalid-email':
-            setErrorMessage('Email inválido');
-            break;
-          case 'auth/too-many-requests':
-            setErrorMessage('Demasiados intentos fallidos. Intenta más tarde');
-            break;
-          case 'auth/network-request-failed':
-            setErrorMessage('Error de conexión. Verifica tu internet');
-            break;
-          default:
-            setErrorMessage('Error al iniciar sesión. Intenta de nuevo');
-        }
-      } else {
-        setErrorMessage('Email o contraseña incorrectos');
+      switch (error.code) {
+        case 'auth/user-not-found':
+          setErrorMessage('No existe una cuenta con este email');
+          break;
+        case 'auth/wrong-password':
+          setErrorMessage('Contraseña incorrecta');
+          break;
+        case 'auth/invalid-email':
+          setErrorMessage('Email inválido');
+          break;
+        case 'auth/too-many-requests':
+          setErrorMessage('Demasiados intentos fallidos. Intenta más tarde');
+          break;
+        case 'auth/network-request-failed':
+          setErrorMessage('Error de conexión. Verifica tu internet');
+          break;
+        default:
+          setErrorMessage('Error al iniciar sesión. Intenta de nuevo');
       }
     } finally {
       setIsLoading(false);
@@ -243,66 +101,43 @@ const LoginScreen = () => {
     setErrorMessage('');
     
     try {
-      let result;
-      
-      if (useFirebase) {
-        // Configurar el proveedor basado en el tipo
-        let provider;
-        if (providerType === 'google') {
-          provider = new GoogleAuthProvider();
-          // Configuraciones adicionales para Google
-          provider.addScope('profile');
-          provider.addScope('email');
-        } else if (providerType === 'facebook') {
-          provider = new FacebookAuthProvider();
-          // Configuraciones adicionales para Facebook
-          provider.addScope('email');
-        }
-        
-        result = await signInWithPopup(auth, provider);
-      } else {
-        // Simulación para pruebas
-        result = await mockAuth.signInWithPopup(providerType);
+      let provider;
+      if (providerType === 'google') {
+        provider = new GoogleAuthProvider();
+        provider.addScope('profile');
+        provider.addScope('email');
+      } else if (providerType === 'facebook') {
+        provider = new FacebookAuthProvider();
+        provider.addScope('email');
       }
       
+      const result = await signInWithPopup(auth, provider);
       console.log(`Autenticación exitosa con ${providerType}`);
       
-      setCurrentUser(result.user);
       setShowSuccess(true);
       
-      // Procesar datos del usuario después de la autenticación
-      if (useFirebase) {
-        await processUserAfterAuth(result.user);
-      }
-      
       setTimeout(() => {
-        setIsAuthenticated(true);
-        setShowSuccess(false);
+        onLoginSuccess(result.user);
       }, 2000);
       
     } catch (error) {
       console.error(`Error en login con ${providerType}:`, error);
       
-      // Manejo de errores específicos para autenticación social
-      if (useFirebase) {
-        switch (error.code) {
-          case 'auth/popup-closed-by-user':
-            setErrorMessage('Ventana de autenticación cerrada');
-            break;
-          case 'auth/popup-blocked':
-            setErrorMessage('Ventana emergente bloqueada por el navegador');
-            break;
-          case 'auth/network-request-failed':
-            setErrorMessage('Error de conexión. Verifica tu internet');
-            break;
-          case 'auth/account-exists-with-different-credential':
-            setErrorMessage('Ya existe una cuenta con este email usando otro método');
-            break;
-          default:
-            setErrorMessage(`Error al iniciar sesión con ${providerType}`);
-        }
-      } else {
-        setErrorMessage(`Error al iniciar sesión con ${providerType}`);
+      switch (error.code) {
+        case 'auth/popup-closed-by-user':
+          setErrorMessage('Ventana de autenticación cerrada');
+          break;
+        case 'auth/popup-blocked':
+          setErrorMessage('Ventana emergente bloqueada por el navegador');
+          break;
+        case 'auth/network-request-failed':
+          setErrorMessage('Error de conexión. Verifica tu internet');
+          break;
+        case 'auth/account-exists-with-different-credential':
+          setErrorMessage('Ya existe una cuenta con este email usando otro método');
+          break;
+        default:
+          setErrorMessage(`Error al iniciar sesión con ${providerType}`);
       }
     } finally {
       setIsLoading(false);
@@ -323,55 +158,28 @@ const LoginScreen = () => {
     setIsLoading(true);
     
     try {
-      if (useFirebase) {
-        // Usar Firebase real para restablecer contraseña
-        await sendPasswordResetEmail(auth, resetEmail);
-      }
-      
+      await sendPasswordResetEmail(auth, resetEmail);
       setErrorMessage('Se ha enviado un correo para restablecer tu contraseña');
       setShowForgotPassword(false);
       setResetEmail('');
     } catch (error) {
       console.error('Error al enviar correo de restablecimiento:', error);
       
-      if (useFirebase) {
-        switch (error.code) {
-          case 'auth/user-not-found':
-            setErrorMessage('No existe una cuenta con este email');
-            break;
-          case 'auth/invalid-email':
-            setErrorMessage('Email inválido');
-            break;
-          case 'auth/network-request-failed':
-            setErrorMessage('Error de conexión. Verifica tu internet');
-            break;
-          default:
-            setErrorMessage('Error al enviar el correo de restablecimiento');
-        }
-      } else {
-        setErrorMessage('Error al enviar el correo de restablecimiento');
+      switch (error.code) {
+        case 'auth/user-not-found':
+          setErrorMessage('No existe una cuenta con este email');
+          break;
+        case 'auth/invalid-email':
+          setErrorMessage('Email inválido');
+          break;
+        case 'auth/network-request-failed':
+          setErrorMessage('Error de conexión. Verifica tu internet');
+          break;
+        default:
+          setErrorMessage('Error al enviar el correo de restablecimiento');
       }
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      if (useFirebase) {
-        await signOut(auth);
-      } else {
-        await mockAuth.signOut();
-      }
-      
-      setIsAuthenticated(false);
-      setCurrentUser(null);
-      setEmail('');
-      setPassword('');
-      console.log('Sesión cerrada exitosamente');
-    } catch (error) {
-      console.error('Error al cerrar sesión:', error);
-      setErrorMessage('Error al cerrar sesión');
     }
   };
 
@@ -379,11 +187,6 @@ const LoginScreen = () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   };
-
-  // Si está autenticado, mostrar página de usuario autenticado
-  if (isAuthenticated && currentUser) {
-    return <AuthenticatedUserPage user={currentUser} onLogout={handleLogout} />;
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 flex items-center justify-center p-4">
@@ -459,7 +262,7 @@ const LoginScreen = () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email"
-                className="w-full pl-10 pr-4 py-4 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent backdrop-blur-sm"
+                className="w-full pl-10 pr-4 py-4 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:2 focus:ring-indigo-400 focus:border-transparent backdrop-blur-sm"
               />
             </div>
 
