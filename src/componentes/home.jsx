@@ -39,10 +39,14 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
+<<<<<<< HEAD:src/home.jsx
 import Slider from 'react-slick';
 import 'slick-carousel/slick/slick.css';
 import 'slick-carousel/slick/slick-theme.css';
 import logoSinde from './assets/logo-sindesparches.png';
+=======
+import { auth } from '../firebase/firebase-config.js'; // Importar desde el archivo de configuración
+>>>>>>> c0c7caec61fc110ba07ed50fefb1f23813c4dc23:src/componentes/home.jsx
 
 const Home = ({ user, onLogout }) => {
   const [planes, setPlanes] = useState([]);
