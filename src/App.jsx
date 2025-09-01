@@ -1,33 +1,43 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from './firebase-config'; // Corregido: importar desde firebase-config
-import LoginScreen from './login'; // Corregido: nombre del componente
-import Home from './home'; // Corregido: nombre del componente
+import LoginScreen from './componentes/login.jsx';
+import CrearCuenta from './componentes/CrearCuenta';
+import Home from './componentes/Home';
+import { auth } from './firebase/firebase-config.js';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 
-const App = () => {
+function App() {
+  const [currentView, setCurrentView] = useState('login');
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Listener para cambios en el estado de autenticación
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        setUser(firebaseUser);
+      } else {
+        setUser(null);
+      }
       setIsLoading(false);
     });
 
-    // Cleanup del listener
     return () => unsubscribe();
   }, []);
 
   const handleLoginSuccess = (user) => {
     setUser(user);
+    setCurrentView('home');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await signOut(auth);
     setUser(null);
+    setCurrentView('login');
   };
 
-  // Pantalla de carga mientras se verifica el estado de autenticación
+  const showCrearCuenta = () => setCurrentView('crearCuenta');
+  const showLogin = () => setCurrentView('login');
+
+  // Mientras Firebase verifica sesión (evita parpadeos)
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 flex items-center justify-center">
@@ -39,16 +49,27 @@ const App = () => {
     );
   }
 
-  // Renderizar la pantalla apropiada según el estado de autenticación
+  // Si ya hay usuario autenticado, mostrar Home
+  if (user) {
+    return <Home user={user} onLogout={handleLogout} />;
+  }
+
+  // Si no hay usuario, mostrar Login o CrearCuenta
   return (
     <div className="App">
-      {user ? (
-        <Home user={user} onLogout={handleLogout} />
+      {currentView === 'login' ? (
+        <LoginScreen
+          onLoginSuccess={handleLoginSuccess}
+          onShowCrearCuenta={showCrearCuenta}
+        />
       ) : (
-        <LoginScreen onLoginSuccess={handleLoginSuccess} />
+        <CrearCuenta
+          onCrearCuentaSuccess={handleLoginSuccess}
+          onShowLogin={showLogin}
+        />
       )}
     </div>
   );
-};
+}
 
 export default App;

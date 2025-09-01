@@ -1,7 +1,7 @@
 import React from 'react';
 import { User, LogOut, Mail, Calendar, Shield } from 'lucide-react';
 import { signOut } from 'firebase/auth';
-import { auth } from './firebase-config'; // Importar desde el archivo de configuración
+import { auth } from '../firebase/firebase-config.js'; // Importar desde el archivo de configuración
 
 const Home = ({ user, onLogout }) => {
   const handleLogout = async () => {
