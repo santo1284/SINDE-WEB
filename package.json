@@ -5,23 +5,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
-<<<<<<< HEAD
     "@headlessui/react": "^2.2.7",
     "@tailwindcss/vite": "^4.1.11",
-=======
->>>>>>> c0c7caec61fc110ba07ed50fefb1f23813c4dc23
     "firebase": "^11.10.0",
     "lucide-react": "^0.525.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-<<<<<<< HEAD
     "react-router-dom": "^7.6.3",
     "react-slick": "^0.30.3",
-    "slick-carousel": "^1.8.1"
-=======
-    "react-icons": "^5.5.0",
-    "react-router-dom": "^7.6.3"
->>>>>>> c0c7caec61fc110ba07ed50fefb1f23813c4dc23
+    "slick-carousel": "^1.8.1",
+    "react-icons": "^5.5.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.1",
