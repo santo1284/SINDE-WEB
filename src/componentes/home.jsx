@@ -4,15 +4,16 @@ import {
   doc, 
   updateDoc,
   collection,
+  addDoc,
+  serverTimestamp,
   onSnapshot,
   arrayRemove,
-  addDoc,
   query,
   orderBy,
   limit, 
   getDocs
 } from 'firebase/firestore';
-import { db, auth } from '../firebase/firebase-config';
+import { db, storage, auth } from '../firebase/firebase-config';
 import {
   User,
   LogOut,
@@ -41,6 +42,70 @@ import Slider from 'react-slick';
 import 'slick-carousel/slick/slick.css';
 import 'slick-carousel/slick/slick-theme.css';
 import logoSinde from '../assets/logo-sindesparches.png';
+import { v4 as uuidv4 } from "uuid";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import imageCompression from "browser-image-compression";
+
+// Utilidades para manejo de imágenes y datos
+const ImageUtils = {
+  // Comprimir imagen manteniendo calidad
+  compressImage: (file, maxWidth = 800, quality = 0.8) => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        // Calcular nuevas dimensiones manteniendo aspect ratio
+        const ratio = Math.min(maxWidth / img.width, maxWidth / img.height);
+        canvas.width = img.width * ratio;
+        canvas.height = img.height * ratio;
+        
+        // Dibujar imagen redimensionada
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        // Convertir a blob con compresión
+        canvas.toBlob(resolve, 'image/jpeg', quality);
+      };
+      
+      img.src = URL.createObjectURL(file);
+    });
+  },
+
+  // Convertir blob a base64 para almacenamiento
+  blobToBase64: (blob) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+  }
+};
+
+// Hook personalizado para geolocalización
+const useGeolocation = () => {
+  const [location, setLocation] = useState(null);
+  const [error, setError] = useState(null);
+
+  const getLocation = () => {
+    if (!navigator.geolocation) {
+      setError('Geolocalización no soportada');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude
+        });
+      },
+      (err) => setError('Error obteniendo ubicación: ' + err.message)
+    );
+  };
+
+  return { location, error, getLocation };
+};
 
 const Home = ({ user, onLogout }) => {
   const [planes, setPlanes] = useState([]);
@@ -56,6 +121,10 @@ const Home = ({ user, onLogout }) => {
     planTitle: ''
   });
   const [modalCrearPlan, setModalCrearPlan] = useState(false);
+
+  
+  
+  // Estado mejorado para nuevo plan
   const [nuevoPlan, setNuevoPlan] = useState({
     title: '',
     description: '',
@@ -63,8 +132,23 @@ const Home = ({ user, onLogout }) => {
     date: '',
     time: '',
     location: '',
-    imageUrls: []
+    locationAddress: '',
+    city: '',
+    state: '',
+    latitude: null,
+    longitude: null,
+    imageUrls: [],
+    enableWhatsapp: false,
+    phoneNumber: ''
   });
+
+  const [creandoPlan, setCreandoPlan] = useState(false);
+  const [subiendoImagenes, setSubiendoImagenes] = useState(false);
+  const [errores, setErrores] = useState({});
+  const { location, getLocation } = useGeolocation();
+
+  const newId = uuidv4();
+  console.log("Nuevo ID único:", newId);
 
   const handleLogout = async () => {
     try {
@@ -227,6 +311,227 @@ const Home = ({ user, onLogout }) => {
     }
   };
 
+  // FUNCIÓN MEJORADA PARA MANEJAR IMÁGENES CON COMPRESIÓN
+  const manejarImagenes = async (files) => {
+    if (!files || files.length === 0) return;
+    
+    setSubiendoImagenes(true);
+    
+    try {
+      const imagenesComprimidas = [];
+      
+      for (let file of Array.from(files)) {
+        // Validar tipo de archivo
+        if (!file.type.startsWith('image/')) {
+          console.warn(`Archivo ${file.name} no es una imagen válida`);
+          continue;
+        }
+
+        // Validar tamaño (máximo 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+          console.warn(`Archivo ${file.name} es demasiado grande`);
+          continue;
+        }
+
+        // Comprimir imagen
+        const compressedBlob = await ImageUtils.compressImage(file);
+        
+        // Subir a Firebase Storage
+        const nombreArchivo = `planes/${user.uid}/${uuidv4()}_${file.name}`;
+        const storageRef = ref(storage, nombreArchivo);
+        const snapshot = await uploadBytes(storageRef, compressedBlob);
+        const url = await getDownloadURL(snapshot.ref);
+        
+        imagenesComprimidas.push(url);
+      }
+
+      // Limitar a máximo 5 imágenes
+      const imagenesFinales = [...nuevoPlan.imageUrls, ...imagenesComprimidas].slice(0, 5);
+      
+      setNuevoPlan(prev => ({
+        ...prev,
+        imageUrls: imagenesFinales
+      }));
+
+    } catch (error) {
+      console.error('Error procesando imágenes:', error);
+      setErrores(prev => ({ ...prev, imagenes: 'Error al procesar las imágenes' }));
+    } finally {
+      setSubiendoImagenes(false);
+    }
+  };
+
+  // Eliminar imagen
+  const eliminarImagen = (index) => {
+    setNuevoPlan(prev => ({
+      ...prev,
+      imageUrls: prev.imageUrls.filter((_, i) => i !== index)
+    }));
+  };
+
+  // Obtener ubicación actual
+  const obtenerUbicacionActual = () => {
+    getLocation();
+  };
+
+  // Efecto para actualizar ubicación cuando se obtiene
+  useEffect(() => {
+    if (location) {
+      setNuevoPlan(prev => ({
+        ...prev,
+        latitude: location.latitude,
+        longitude: location.longitude
+      }));
+      
+      // Geocodificación inversa para obtener dirección
+      geocodificarUbicacion(location.latitude, location.longitude);
+    }
+  }, [location]);
+
+  // Geocodificación inversa
+  const geocodificarUbicacion = async (lat, lng) => {
+    try {
+      // Usando un servicio de geocodificación (ejemplo con OpenStreetMap Nominatim)
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        const address = data.display_name;
+        const city = data.address?.city || data.address?.town || data.address?.village || '';
+        const state = data.address?.state || '';
+        
+        setNuevoPlan(prev => ({
+          ...prev,
+          locationAddress: address,
+          city: city,
+          state: state,
+          location: address // También actualizar el campo location principal
+        }));
+      }
+    } catch (error) {
+      console.error('Error en geocodificación:', error);
+    }
+  };
+
+  // Validar formulario
+  const validarFormulario = () => {
+    const erroresTemp = {};
+    
+    if (!nuevoPlan.title.trim()) {
+      erroresTemp.title = 'El título es obligatorio';
+    }
+    
+    if (!nuevoPlan.description.trim()) {
+      erroresTemp.description = 'La descripción es obligatoria';
+    }
+    
+    if (!nuevoPlan.date) {
+      erroresTemp.date = 'La fecha es obligatoria';
+    }
+    
+    if (!nuevoPlan.time) {
+      erroresTemp.time = 'La hora es obligatoria';
+    }
+    
+    if (!nuevoPlan.location.trim()) {
+      erroresTemp.location = 'La ubicación es obligatoria';
+    }
+
+    if (nuevoPlan.enableWhatsapp && !nuevoPlan.phoneNumber.trim()) {
+      erroresTemp.phoneNumber = 'El número de teléfono es obligatorio si WhatsApp está habilitado';
+    }
+    
+    setErrores(erroresTemp);
+    return Object.keys(erroresTemp).length === 0;
+  };
+
+  // FUNCIÓN MEJORADA PARA CREAR PLAN
+  const crearPlan = async (e) => {
+    e.preventDefault();
+    
+    if (!validarFormulario()) {
+      return;
+    }
+    
+    setCreandoPlan(true);
+    
+    try {
+      // Convertir fecha y hora a timestamp
+      const fechaHora = new Date(`${nuevoPlan.date}T${nuevoPlan.time}`);
+      
+      const planData = {
+        title: nuevoPlan.title.trim(),
+        description: nuevoPlan.description.trim(),
+        category: nuevoPlan.category || 'General',
+        date: fechaHora,
+        time: nuevoPlan.time,
+        timeString: nuevoPlan.time,
+        location: nuevoPlan.location.trim(),
+        locationAddress: nuevoPlan.locationAddress,
+        city: nuevoPlan.city,
+        state: nuevoPlan.state,
+        latitude: nuevoPlan.latitude,
+        longitude: nuevoPlan.longitude,
+        imageUrls: nuevoPlan.imageUrls,
+        enableWhatsapp: nuevoPlan.enableWhatsapp,
+        phoneNumber: nuevoPlan.phoneNumber.trim(),
+        createdBy: user.uid,
+        createdByName: user.displayName || user.email?.split('@')[0] || 'Usuario Anónimo',
+        createdAt: serverTimestamp(),
+        updatedAt: null,
+        likes: [],
+        participants: [],
+        commentCount: 0,
+        shares: 0,
+        isActive: true
+      };
+
+      console.log('Creando plan con datos:', planData);
+      const docRef = await addDoc(collection(db, 'planes'), planData);
+      console.log('Plan creado con ID:', docRef.id);
+
+      // Resetear formulario
+      setNuevoPlan({
+        title: '',
+        description: '',
+        category: '',
+        date: '',
+        time: '',
+        location: '',
+        locationAddress: '',
+        city: '',
+        state: '',
+        latitude: null,
+        longitude: null,
+        imageUrls: [],
+        enableWhatsapp: false,
+        phoneNumber: ''
+      });
+      
+      setErrores({});
+      setModalCrearPlan(false);
+      alert('¡Plan creado exitosamente! 🎉');
+      
+    } catch (error) {
+      console.error('Error al crear plan:', error);
+      setErrores({ general: 'Error al crear el plan. Inténtalo nuevamente.' });
+    } finally {
+      setCreandoPlan(false);
+    }
+  };
+
+  // Abrir en Google Maps
+  const abrirEnGoogleMaps = () => {
+    if (nuevoPlan.location.trim()) {
+      const encodedLocation = encodeURIComponent(nuevoPlan.location);
+      window.open(`https://maps.google.com/maps?q=${encodedLocation}`, '_blank');
+    } else {
+      alert('Primero escribe una dirección');
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'planes'), (snapshot) => {
       const planesData = snapshot.docs.map((doc) => ({
@@ -259,12 +564,12 @@ const Home = ({ user, onLogout }) => {
     .sort((a, b) => {
       const fechaA = a.date?.toDate?.() || new Date(a.date);
       const fechaB = b.date?.toDate?.() || new Date(b.date);
-      return fechaB - fechaA;
+      return fechaB - fechaA; 
     });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
-      {/* HEADER MEJORADO */}
+      {/* HEADER */}
       <header className="bg-gradient-to-b from-black/80 to-transparent text-white top-0 z-50 shadow-xl sticky">
         <div className="flex items-center justify-between px-6 py-4">
           {/* Logo y nombre */}
@@ -329,7 +634,6 @@ const Home = ({ user, onLogout }) => {
                 onClick={() => setShowNotifications(!showNotifications)}
               >
                 <Bell className="w-5 h-5 text-white" />
-                {/* Indicator de notificaciones */}
                 <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
               </button>
 
@@ -342,7 +646,7 @@ const Home = ({ user, onLogout }) => {
                 <Settings className="w-5 h-5 text-white" />
               </button>
 
-              {/* BOTÓN DE CERRAR SESIÓN - MEJORADO */}
+              {/* Cerrar Sesión */}
               <button
                 title="Cerrar Sesión"
                 onClick={handleLogout}
@@ -371,30 +675,9 @@ const Home = ({ user, onLogout }) => {
             </div>
           </div>
         </div>
-
-        {/* Categorías */}
-        <div className="bg-white/95 backdrop-blur-sm text-gray-800 flex justify-center items-center gap-4 md:gap-8 py-4 text-xs md:text-sm font-bold border-t border-white/20 overflow-x-auto scrollbar-hide">
-          {[
-            { emoji: '🎓', label: 'EDUCACIÓN' },
-            { emoji: '🏅', label: 'DEPORTE' },
-            { emoji: '🎭', label: 'CULTURA' },
-            { emoji: '🍳', label: 'GASTRONOMÍA' },
-            { emoji: '🧳', label: 'TURISMO' },
-            { emoji: '🌐', label: 'RUMBA' },
-            { emoji: '🧸', label: 'INFANTIL' }
-          ].map((categoria, index) => (
-            <div 
-              key={index}
-              className="flex items-center gap-2 whitespace-nowrap cursor-pointer hover:text-pink-600 hover:scale-105 transition-all duration-200 px-3 py-2 rounded-full hover:bg-pink-50"
-            >
-              <span className="text-lg">{categoria.emoji}</span>
-              <span className="hidden sm:inline">{categoria.label}</span>
-            </div>
-          ))}
-        </div>
       </header>
 
-      {/* MENU DESPLEGABLE MEJORADO */}
+      {/* MENU DESPLEGABLE */}
       {menuOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex justify-end" onClick={() => setMenuOpen(false)}>
           <div 
@@ -452,6 +735,249 @@ const Home = ({ user, onLogout }) => {
                 </div>
               </nav>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL MEJORADO PARA CREAR PLAN */}
+      {modalCrearPlan && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-y-auto max-h-[90vh]">
+            
+            {/* Header */}
+            <div className="flex justify-between items-center p-6 border-b">
+              <h2 className="text-xl font-bold text-gray-800">📝 Crear Plan Increíble</h2>
+              <button 
+                onClick={() => setModalCrearPlan(false)} 
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-6 h-6 text-gray-600" />
+              </button>
+            </div>
+
+            {/* Formulario */}
+            <form onSubmit={crearPlan} className="p-6 space-y-4">
+              
+              {/* Error general */}
+              {errores.general && (
+                <div className="p-3 bg-red-100 border border-red-300 text-red-700 rounded-lg">
+                  {errores.general}
+                </div>
+              )}
+
+              {/* Título */}
+              <div>
+                <input 
+                  type="text"
+                  placeholder="Título del plan"
+                  value={nuevoPlan.title}
+                  onChange={(e) => setNuevoPlan({ ...nuevoPlan, title: e.target.value })}
+                  className={`w-full p-3 border rounded-lg transition-colors ${
+                    errores.title ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-blue-500'
+                  }`}
+                  required
+                />
+                {errores.title && <p className="text-red-500 text-sm mt-1">{errores.title}</p>}
+              </div>
+
+              {/* Descripción */}
+              <div>
+                <textarea 
+                  placeholder="Descripción del plan"
+                  value={nuevoPlan.description}
+                  onChange={(e) => setNuevoPlan({ ...nuevoPlan, description: e.target.value })}
+                  className={`w-full p-3 border rounded-lg transition-colors ${
+                    errores.description ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-blue-500'
+                  }`}
+                  rows="3"
+                  required
+                />
+                {errores.description && <p className="text-red-500 text-sm mt-1">{errores.description}</p>}
+              </div>
+
+              {/* Categoría */}
+              <div>
+                <select 
+                  value={nuevoPlan.category}
+                  onChange={(e) => setNuevoPlan({ ...nuevoPlan, category: e.target.value })}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:border-blue-500 transition-colors"
+                >
+                  <option value="">Seleccionar categoría</option>
+                  <option value="Deporte">Deporte</option>
+                  <option value="Cultura">Cultura</option>
+                  <option value="Gastronomía">Gastronomía</option>
+                  <option value="Naturaleza">Naturaleza</option>
+                  <option value="Fiesta">Fiesta</option>
+                  <option value="Estudio">Estudio</option>
+                  <option value="Otro">Otro</option>
+                </select>
+              </div>
+
+              {/* Fecha y Hora */}
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <input 
+                    type="date"
+                    value={nuevoPlan.date}
+                    onChange={(e) => setNuevoPlan({ ...nuevoPlan, date: e.target.value })}
+                    className={`w-full p-3 border rounded-lg transition-colors ${
+                      errores.date ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-blue-500'
+                    }`}
+                    required
+                  />
+                  {errores.date && <p className="text-red-500 text-sm mt-1">{errores.date}</p>}
+                </div>
+                <div className="flex-1">
+                  <input 
+                    type="time"
+                    value={nuevoPlan.time}
+                    onChange={(e) => setNuevoPlan({ ...nuevoPlan, time: e.target.value })}
+                    className={`w-full p-3 border rounded-lg transition-colors ${
+                      errores.time ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-blue-500'
+                    }`}
+                    required
+                  />
+                  {errores.time && <p className="text-red-500 text-sm mt-1">{errores.time}</p>}
+                </div>
+              </div>
+
+              {/* Ubicación */}
+              <div>
+                <div className="flex gap-2">
+                  <input 
+                    type="text"
+                    placeholder="Dirección del plan"
+                    value={nuevoPlan.location}
+                    onChange={(e) => setNuevoPlan({ ...nuevoPlan, location: e.target.value })}
+                    className={`flex-1 p-3 border rounded-lg transition-colors ${
+                      errores.location ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-blue-500'
+                    }`}
+                    required
+                  />
+                  <button 
+                    type="button"
+                    onClick={obtenerUbicacionActual}
+                    className="px-4 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
+                    title="Obtener ubicación actual"
+                  >
+                    📍
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={abrirEnGoogleMaps}
+                    className="px-4 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+                    disabled={!nuevoPlan.location.trim()}
+                  >
+                    Maps
+                  </button>
+                </div>
+                {errores.location && <p className="text-red-500 text-sm mt-1">{errores.location}</p>}
+                
+                {/* Info adicional de ubicación */}
+                {(nuevoPlan.city || nuevoPlan.state) && (
+                  <div className="mt-2 p-2 bg-blue-50 rounded-lg text-sm text-blue-700">
+                    📍 {nuevoPlan.city && `Ciudad: ${nuevoPlan.city}`} 
+                    {nuevoPlan.city && nuevoPlan.state && ' | '}
+                    {nuevoPlan.state && `Departamento: ${nuevoPlan.state}`}
+                  </div>
+                )}
+              </div>
+
+              {/* WhatsApp */}
+              <div className="space-y-2">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={nuevoPlan.enableWhatsapp}
+                    onChange={(e) => setNuevoPlan({ ...nuevoPlan, enableWhatsapp: e.target.checked })}
+                    className="w-4 h-4 text-green-600"
+                  />
+                  <span className="text-gray-700">🟢 Habilitar contacto por WhatsApp</span>
+                </label>
+                
+                {nuevoPlan.enableWhatsapp && (
+                  <div>
+                    <input
+                      type="tel"
+                      placeholder="Número de WhatsApp (ej: +57 300 123 4567)"
+                      value={nuevoPlan.phoneNumber}
+                      onChange={(e) => setNuevoPlan({ ...nuevoPlan, phoneNumber: e.target.value })}
+                      className={`w-full p-3 border rounded-lg transition-colors ${
+                        errores.phoneNumber ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-green-500'
+                      }`}
+                    />
+                    {errores.phoneNumber && <p className="text-red-500 text-sm mt-1">{errores.phoneNumber}</p>}
+                  </div>
+                )}
+              </div>
+
+              {/* Subir imágenes */}
+              <div>
+                <label className="block mb-2 text-gray-700 font-medium">
+                  📸 Imágenes del plan (máximo 5)
+                </label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 hover:border-gray-400 transition-colors">
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    multiple 
+                    onChange={(e) => manejarImagenes(e.target.files)}
+                    className="w-full"
+                    disabled={subiendoImagenes || nuevoPlan.imageUrls.length >= 5}
+                  />
+                  <p className="text-sm text-gray-500 mt-2">
+                    Formatos: JPG, PNG. Las imágenes se optimizarán automáticamente.
+                  </p>
+                </div>
+                
+                {errores.imagenes && <p className="text-red-500 text-sm mt-1">{errores.imagenes}</p>}
+                
+                {subiendoImagenes && (
+                  <div className="flex items-center gap-2 mt-2 text-blue-600">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    <span className="text-sm">Procesando imágenes...</span>
+                  </div>
+                )}
+                
+                {/* Preview de imágenes */}
+                {nuevoPlan.imageUrls.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {nuevoPlan.imageUrls.map((url, i) => (
+                      <div key={i} className="relative group">
+                        <img 
+                          src={url} 
+                          alt={`Preview ${i + 1}`} 
+                          className="w-20 h-20 object-cover rounded-lg shadow-md"
+                        />
+                        <button 
+                          type="button"
+                          onClick={() => eliminarImagen(i)}
+                          className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Botón enviar */}
+              <button 
+                type="submit" 
+                disabled={creandoPlan || subiendoImagenes}
+                className="w-full py-3 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-lg font-bold hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+              >
+                {creandoPlan ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    Creando plan...
+                  </div>
+                ) : (
+                  "🚀 Crear Plan"
+                )}
+              </button>
+            </form>
           </div>
         </div>
       )}
@@ -570,12 +1096,43 @@ const Home = ({ user, onLogout }) => {
                         {plan.description}
                       </p>
                       
-                      {plan.date && (
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
-                          <Calendar className="w-4 h-4" />
-                          <span>{formatDate(plan.date)}</span>
-                        </div>
-                      )}
+                      {/* Información de fecha, hora y ubicación */}
+                      <div className="space-y-2">
+                        {plan.date && (
+                          <div className="flex items-center gap-2 text-sm text-gray-500">
+                            <Calendar className="w-4 h-4" />
+                            <span>{formatDate(plan.date)}</span>
+                            {plan.time && <span>• {plan.time}</span>}
+                          </div>
+                        )}
+
+                        {plan.location && (
+                          <div className="flex items-center gap-2 text-sm text-gray-500">
+                            <MapPin className="w-4 h-4" />
+                            <span className="truncate">{plan.location}</span>
+                          </div>
+                        )}
+
+                        {plan.city && (
+                          <div className="text-xs text-gray-400">
+                            📍 {plan.city}{plan.state && `, ${plan.state}`}
+                          </div>
+                        )}
+
+                        {/* WhatsApp contact */}
+                        {plan.enableWhatsapp && plan.phoneNumber && (
+                          <div className="mt-2">
+                            <a
+                              href={`https://wa.me/${plan.phoneNumber.replace(/\D/g, '')}?text=Hola! Vi tu plan "${plan.title}" en SindesParches y me interesa participar.`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-full text-sm font-medium transition-all duration-200 hover:scale-105"
+                            >
+                              🟢 WhatsApp
+                            </a>
+                          </div>
+                        )}
+                      </div>
 
                       {/* Acciones del plan */}
                       <div className="flex items-center justify-between pt-4 border-t border-gray-100">
@@ -661,7 +1218,7 @@ const Home = ({ user, onLogout }) => {
           )}
         </section>
 
-        {/* Modal de comentarios mejorado */}
+        {/* Modal de comentarios */}
         {modalComentarios.isOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
