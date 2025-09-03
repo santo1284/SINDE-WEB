@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import PlanModal from './PlanModal';
+import { v4 as uuidv4 } from "uuid"; 
 import { 
   arrayUnion, 
   doc, 
@@ -42,7 +44,6 @@ import Slider from 'react-slick';
 import 'slick-carousel/slick/slick.css';
 import 'slick-carousel/slick/slick-theme.css';
 import logoSinde from '../assets/logo-sindesparches.png';
-import { v4 as uuidv4 } from "uuid";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import imageCompression from "browser-image-compression";
 
@@ -122,7 +123,12 @@ const Home = ({ user, onLogout }) => {
   });
   const [modalCrearPlan, setModalCrearPlan] = useState(false);
 
+  const [showModal, setShowModal] = useState(false);
   
+  const handlePlanCreated = (newPlan) => {
+    console.log('Plan creado:', newPlan);
+    // Actualizar tu lista de planes
+  };
   
   // Estado mejorado para nuevo plan
   const [nuevoPlan, setNuevoPlan] = useState({
@@ -147,8 +153,6 @@ const Home = ({ user, onLogout }) => {
   const [errores, setErrores] = useState({});
   const { location, getLocation } = useGeolocation();
 
-  const newId = uuidv4();
-  console.log("Nuevo ID único:", newId);
 
   const handleLogout = async () => {
     try {
@@ -311,55 +315,7 @@ const Home = ({ user, onLogout }) => {
     }
   };
 
-  // FUNCIÓN MEJORADA PARA MANEJAR IMÁGENES CON COMPRESIÓN
-  const manejarImagenes = async (files) => {
-    if (!files || files.length === 0) return;
-    
-    setSubiendoImagenes(true);
-    
-    try {
-      const imagenesComprimidas = [];
-      
-      for (let file of Array.from(files)) {
-        // Validar tipo de archivo
-        if (!file.type.startsWith('image/')) {
-          console.warn(`Archivo ${file.name} no es una imagen válida`);
-          continue;
-        }
-
-        // Validar tamaño (máximo 10MB)
-        if (file.size > 10 * 1024 * 1024) {
-          console.warn(`Archivo ${file.name} es demasiado grande`);
-          continue;
-        }
-
-        // Comprimir imagen
-        const compressedBlob = await ImageUtils.compressImage(file);
-        
-        // Subir a Firebase Storage
-        const nombreArchivo = `planes/${user.uid}/${uuidv4()}_${file.name}`;
-        const storageRef = ref(storage, nombreArchivo);
-        const snapshot = await uploadBytes(storageRef, compressedBlob);
-        const url = await getDownloadURL(snapshot.ref);
-        
-        imagenesComprimidas.push(url);
-      }
-
-      // Limitar a máximo 5 imágenes
-      const imagenesFinales = [...nuevoPlan.imageUrls, ...imagenesComprimidas].slice(0, 5);
-      
-      setNuevoPlan(prev => ({
-        ...prev,
-        imageUrls: imagenesFinales
-      }));
-
-    } catch (error) {
-      console.error('Error procesando imágenes:', error);
-      setErrores(prev => ({ ...prev, imagenes: 'Error al procesar las imágenes' }));
-    } finally {
-      setSubiendoImagenes(false);
-    }
-  };
+  // (Eliminado: función duplicada manejarImagenes)
 
   // Eliminar imagen
   const eliminarImagen = (index) => {
@@ -447,80 +403,112 @@ const Home = ({ user, onLogout }) => {
     return Object.keys(erroresTemp).length === 0;
   };
 
-  // FUNCIÓN MEJORADA PARA CREAR PLAN
-  const crearPlan = async (e) => {
-    e.preventDefault();
-    
-    if (!validarFormulario()) {
-      return;
-    }
-    
-    setCreandoPlan(true);
-    
+// 🔹 Función igual a la de móvil pero en JS
+const uploadImagesToFirebase = async (imageFiles, userId, planId) => {
+  const urls = [];
+  for (let file of imageFiles) {
     try {
-      // Convertir fecha y hora a timestamp
-      const fechaHora = new Date(`${nuevoPlan.date}T${nuevoPlan.time}`);
-      
-      const planData = {
-        title: nuevoPlan.title.trim(),
-        description: nuevoPlan.description.trim(),
-        category: nuevoPlan.category || 'General',
-        date: fechaHora,
-        time: nuevoPlan.time,
-        timeString: nuevoPlan.time,
-        location: nuevoPlan.location.trim(),
-        locationAddress: nuevoPlan.locationAddress,
-        city: nuevoPlan.city,
-        state: nuevoPlan.state,
-        latitude: nuevoPlan.latitude,
-        longitude: nuevoPlan.longitude,
-        imageUrls: nuevoPlan.imageUrls,
-        enableWhatsapp: nuevoPlan.enableWhatsapp,
-        phoneNumber: nuevoPlan.phoneNumber.trim(),
-        createdBy: user.uid,
-        createdByName: user.displayName || user.email?.split('@')[0] || 'Usuario Anónimo',
-        createdAt: serverTimestamp(),
-        updatedAt: null,
-        likes: [],
-        participants: [],
-        commentCount: 0,
-        shares: 0,
-        isActive: true
-      };
-
-      console.log('Creando plan con datos:', planData);
-      const docRef = await addDoc(collection(db, 'planes'), planData);
-      console.log('Plan creado con ID:', docRef.id);
-
-      // Resetear formulario
-      setNuevoPlan({
-        title: '',
-        description: '',
-        category: '',
-        date: '',
-        time: '',
-        location: '',
-        locationAddress: '',
-        city: '',
-        state: '',
-        latitude: null,
-        longitude: null,
-        imageUrls: [],
-        enableWhatsapp: false,
-        phoneNumber: ''
-      });
-      
-      setErrores({});
-      setModalCrearPlan(false);
-      alert('¡Plan creado exitosamente! 🎉');
-      
-    } catch (error) {
-      console.error('Error al crear plan:', error);
-      setErrores({ general: 'Error al crear el plan. Inténtalo nuevamente.' });
-    } finally {
-      setCreandoPlan(false);
+      const compressedBlob = await ImageUtils.compressImage(file);
+      const imageName = `${crypto.randomUUID()}.jpg`;
+      const storageRef = ref(storage, `planes/${userId}/${planId}/${imageName}`);
+      const snapshot = await uploadBytes(storageRef, compressedBlob);
+      const url = await getDownloadURL(snapshot.ref);
+      urls.push(url);
+    } catch (err) {
+      console.error("❌ Error subiendo imagen:", err);
     }
-  };
+  }
+  return urls;
+};
+
+// 🔹 Crear plan (idéntico flujo a móvil)
+const crearPlan = async (e) => {
+  e.preventDefault();
+  if (!validarFormulario()) return;
+  setCreandoPlan(true);
+
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Usuario no autenticado");
+
+    // ✅ Generar ID igual que en la app móvil
+    const planId = uuidv4();
+
+    // Subir imágenes
+    const imagenesComprimidas = await uploadImagesToFirebase(
+      nuevoPlan.imageUrls,
+      user.uid,
+      planId
+    );
+
+    // Crear objeto plan
+    const planData = {
+      id: planId, // 👈 importante, igual que en Kotlin
+      userId: user.uid,
+      createdAt: Date.now(), // 👈 en móvil usas System.currentTimeMillis()
+      title: nuevoPlan.title.trim(),
+      description: nuevoPlan.description.trim(),
+      date: new Date(`${nuevoPlan.date}T${nuevoPlan.timeString}`).getTime(),
+      timeString: nuevoPlan.timeString,
+      location: nuevoPlan.location.trim(),
+      latitude: nuevoPlan.latitude,
+      longitude: nuevoPlan.longitude,
+      locationAddress: nuevoPlan.locationAddress,
+      city: nuevoPlan.city,
+      state: nuevoPlan.state,
+      imageUrls: imagenesComprimidas,
+      enableWhatsapp: nuevoPlan.enableWhatsapp,
+      phoneNumber: nuevoPlan.enableWhatsapp ? nuevoPlan.phoneNumber.trim() : "",
+      likes: [],
+      participants: [],
+      commentCount: 0,
+      shares: 0,
+    };
+
+    // ✅ Guardar con el mismo ID
+    await setDoc(doc(db, "planes", planId), planData);
+
+    console.log("✅ Plan creado con ID:", planId);
+    alert("¡Plan creado exitosamente!");
+
+    setNuevoPlan({});
+    setErrores({});
+    setModalCrearPlan(false);
+  } catch (error) {
+    console.error("❌ Error al crear plan:", error);
+    setErrores({ general: "Error al crear el plan. Inténtalo nuevamente." });
+  } finally {
+    setCreandoPlan(false);
+  }
+};
+
+
+
+
+// FUNCIÓN MEJORADA PARA MANEJAR IMÁGENES
+const manejarImagenes = async (files) => {
+  if (!files || files.length === 0) return;
+
+  try {
+    // Aquí NO subimos todavía, solo guardamos los File
+    const nuevasImagenes = Array.from(files).filter(
+      (file) => file.type.startsWith("image/") && file.size <= 10 * 1024 * 1024
+    );
+
+    // Guardamos los files en el estado (para subirlos después en crearPlan)
+    setNuevoPlan((prev) => ({
+      ...prev,
+      imageUrls: [...prev.imageUrls, ...nuevasImagenes].slice(0, 5),
+    }));
+  } catch (error) {
+    console.error("Error procesando imágenes:", error);
+    setErrores((prev) => ({
+      ...prev,
+      imagenes: "Error al procesar las imágenes",
+    }));
+  }
+};
+
 
   // Abrir en Google Maps
   const abrirEnGoogleMaps = () => {
@@ -739,262 +727,54 @@ const Home = ({ user, onLogout }) => {
         </div>
       )}
 
-      {/* MODAL MEJORADO PARA CREAR PLAN */}
-      {modalCrearPlan && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-y-auto max-h-[90vh]">
-            
-            {/* Header */}
-            <div className="flex justify-between items-center p-6 border-b">
-              <h2 className="text-xl font-bold text-gray-800">📝 Crear Plan Increíble</h2>
-              <button 
-                onClick={() => setModalCrearPlan(false)} 
-                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-              >
-                <X className="w-6 h-6 text-gray-600" />
-              </button>
-            </div>
 
-            {/* Formulario */}
-            <form onSubmit={crearPlan} className="p-6 space-y-4">
-              
-              {/* Error general */}
-              {errores.general && (
-                <div className="p-3 bg-red-100 border border-red-300 text-red-700 rounded-lg">
-                  {errores.general}
-                </div>
-              )}
 
-              {/* Título */}
-              <div>
-                <input 
-                  type="text"
-                  placeholder="Título del plan"
-                  value={nuevoPlan.title}
-                  onChange={(e) => setNuevoPlan({ ...nuevoPlan, title: e.target.value })}
-                  className={`w-full p-3 border rounded-lg transition-colors ${
-                    errores.title ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-blue-500'
-                  }`}
-                  required
-                />
-                {errores.title && <p className="text-red-500 text-sm mt-1">{errores.title}</p>}
-              </div>
 
-              {/* Descripción */}
-              <div>
-                <textarea 
-                  placeholder="Descripción del plan"
-                  value={nuevoPlan.description}
-                  onChange={(e) => setNuevoPlan({ ...nuevoPlan, description: e.target.value })}
-                  className={`w-full p-3 border rounded-lg transition-colors ${
-                    errores.description ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-blue-500'
-                  }`}
-                  rows="3"
-                  required
-                />
-                {errores.description && <p className="text-red-500 text-sm mt-1">{errores.description}</p>}
-              </div>
 
-              {/* Categoría */}
-              <div>
-                <select 
-                  value={nuevoPlan.category}
-                  onChange={(e) => setNuevoPlan({ ...nuevoPlan, category: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:border-blue-500 transition-colors"
-                >
-                  <option value="">Seleccionar categoría</option>
-                  <option value="Deporte">Deporte</option>
-                  <option value="Cultura">Cultura</option>
-                  <option value="Gastronomía">Gastronomía</option>
-                  <option value="Naturaleza">Naturaleza</option>
-                  <option value="Fiesta">Fiesta</option>
-                  <option value="Estudio">Estudio</option>
-                  <option value="Otro">Otro</option>
-                </select>
-              </div>
 
-              {/* Fecha y Hora */}
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <input 
-                    type="date"
-                    value={nuevoPlan.date}
-                    onChange={(e) => setNuevoPlan({ ...nuevoPlan, date: e.target.value })}
-                    className={`w-full p-3 border rounded-lg transition-colors ${
-                      errores.date ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-blue-500'
-                    }`}
-                    required
-                  />
-                  {errores.date && <p className="text-red-500 text-sm mt-1">{errores.date}</p>}
-                </div>
-                <div className="flex-1">
-                  <input 
-                    type="time"
-                    value={nuevoPlan.time}
-                    onChange={(e) => setNuevoPlan({ ...nuevoPlan, time: e.target.value })}
-                    className={`w-full p-3 border rounded-lg transition-colors ${
-                      errores.time ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-blue-500'
-                    }`}
-                    required
-                  />
-                  {errores.time && <p className="text-red-500 text-sm mt-1">{errores.time}</p>}
-                </div>
-              </div>
+      
 
-              {/* Ubicación */}
-              <div>
-                <div className="flex gap-2">
-                  <input 
-                    type="text"
-                    placeholder="Dirección del plan"
-                    value={nuevoPlan.location}
-                    onChange={(e) => setNuevoPlan({ ...nuevoPlan, location: e.target.value })}
-                    className={`flex-1 p-3 border rounded-lg transition-colors ${
-                      errores.location ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-blue-500'
-                    }`}
-                    required
-                  />
-                  <button 
-                    type="button"
-                    onClick={obtenerUbicacionActual}
-                    className="px-4 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
-                    title="Obtener ubicación actual"
-                  >
-                    📍
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={abrirEnGoogleMaps}
-                    className="px-4 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
-                    disabled={!nuevoPlan.location.trim()}
-                  >
-                    Maps
-                  </button>
-                </div>
-                {errores.location && <p className="text-red-500 text-sm mt-1">{errores.location}</p>}
-                
-                {/* Info adicional de ubicación */}
-                {(nuevoPlan.city || nuevoPlan.state) && (
-                  <div className="mt-2 p-2 bg-blue-50 rounded-lg text-sm text-blue-700">
-                    📍 {nuevoPlan.city && `Ciudad: ${nuevoPlan.city}`} 
-                    {nuevoPlan.city && nuevoPlan.state && ' | '}
-                    {nuevoPlan.state && `Departamento: ${nuevoPlan.state}`}
-                  </div>
-                )}
-              </div>
 
-              {/* WhatsApp */}
-              <div className="space-y-2">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={nuevoPlan.enableWhatsapp}
-                    onChange={(e) => setNuevoPlan({ ...nuevoPlan, enableWhatsapp: e.target.checked })}
-                    className="w-4 h-4 text-green-600"
-                  />
-                  <span className="text-gray-700">🟢 Habilitar contacto por WhatsApp</span>
-                </label>
-                
-                {nuevoPlan.enableWhatsapp && (
-                  <div>
-                    <input
-                      type="tel"
-                      placeholder="Número de WhatsApp (ej: +57 300 123 4567)"
-                      value={nuevoPlan.phoneNumber}
-                      onChange={(e) => setNuevoPlan({ ...nuevoPlan, phoneNumber: e.target.value })}
-                      className={`w-full p-3 border rounded-lg transition-colors ${
-                        errores.phoneNumber ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-green-500'
-                      }`}
-                    />
-                    {errores.phoneNumber && <p className="text-red-500 text-sm mt-1">{errores.phoneNumber}</p>}
-                  </div>
-                )}
-              </div>
 
-              {/* Subir imágenes */}
-              <div>
-                <label className="block mb-2 text-gray-700 font-medium">
-                  📸 Imágenes del plan (máximo 5)
-                </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 hover:border-gray-400 transition-colors">
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    multiple 
-                    onChange={(e) => manejarImagenes(e.target.files)}
-                    className="w-full"
-                    disabled={subiendoImagenes || nuevoPlan.imageUrls.length >= 5}
-                  />
-                  <p className="text-sm text-gray-500 mt-2">
-                    Formatos: JPG, PNG. Las imágenes se optimizarán automáticamente.
-                  </p>
-                </div>
-                
-                {errores.imagenes && <p className="text-red-500 text-sm mt-1">{errores.imagenes}</p>}
-                
-                {subiendoImagenes && (
-                  <div className="flex items-center gap-2 mt-2 text-blue-600">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                    <span className="text-sm">Procesando imágenes...</span>
-                  </div>
-                )}
-                
-                {/* Preview de imágenes */}
-                {nuevoPlan.imageUrls.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-3">
-                    {nuevoPlan.imageUrls.map((url, i) => (
-                      <div key={i} className="relative group">
-                        <img 
-                          src={url} 
-                          alt={`Preview ${i + 1}`} 
-                          className="w-20 h-20 object-cover rounded-lg shadow-md"
-                        />
-                        <button 
-                          type="button"
-                          onClick={() => eliminarImagen(i)}
-                          className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
 
-              {/* Botón enviar */}
-              <button 
-                type="submit" 
-                disabled={creandoPlan || subiendoImagenes}
-                className="w-full py-3 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-lg font-bold hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-              >
-                {creandoPlan ? (
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                    Creando plan...
-                  </div>
-                ) : (
-                  "🚀 Crear Plan"
-                )}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Botón crear plan mejorado */}
         <div className="text-center mb-12">
           <div className="relative">
-            <button
-              onClick={() => setModalCrearPlan(true)}
-              className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 hover:from-pink-600 hover:via-purple-600 hover:to-indigo-600 text-white px-10 py-4 rounded-full font-bold text-lg shadow-2xl hover:shadow-3xl transform hover:scale-105 transition-all duration-300 flex items-center gap-3 mx-auto relative overflow-hidden"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -skew-x-12 transform translate-x-full group-hover:translate-x-[-200%] transition-transform duration-1000"></div>
-              <Plus className="w-6 h-6" />
-              <span>¡Crear Plan Increíble!</span>
-              <span className="text-2xl">✨</span>
-            </button>
+             <div>
+              <button onClick={() => setShowModal(true)}>
+                Crear Plan
+              </button>
+              
+              <PlanModal 
+                isOpen={showModal}
+                onClose={() => setShowModal(false)}
+                onPlanCreated={handlePlanCreated}
+              />
+            </div>
             <p className="text-white/80 mt-2 text-sm">Comparte tu idea y encuentra compañeros de aventura</p>
           </div>
         </div>
