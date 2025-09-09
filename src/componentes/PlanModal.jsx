@@ -1,9 +1,16 @@
-import React, { useState } from 'react';
-import { X, MapPin, Camera, Clock, Calendar, MessageCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, MapPin, Camera, Clock, Calendar } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
 import { v4 as uuidv4 } from "uuid"; // npm i uuid
 import { getFirestore, doc, setDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
+
+const containerStyle = {
+  width: "100%",
+  height: "250px",
+  borderRadius: "12px",
+};
 
 const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
   const [nuevoPlan, setNuevoPlan] = useState({
@@ -21,16 +28,39 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
     phoneNumber: ''
   });
 
-  // Archivos e imágenes para preview (local, no subidas aún)
   const [imageFiles, setImageFiles] = useState([]);
   const [previewUrls, setPreviewUrls] = useState([]);
-
   const [errores, setErrores] = useState({});
   const [creandoPlan, setCreandoPlan] = useState(false);
+  const [coords, setCoords] = useState(null);
 
   const auth = getAuth();
   const db = getFirestore();
   const storage = getStorage();
+
+  // Google Maps Loader
+  const { isLoaded } = useJsApiLoader({
+    googleMapsApiKey: "AIzaSyCxjuEfWAO73CCvvkWyNA3dXGHc_EXOBMo", // ⚠️ pon aquí tu API Key real
+  });
+
+  // Geocodificar dirección escrita en el input
+  useEffect(() => {
+    if (nuevoPlan.location && isLoaded && window.google) {
+      const geocoder = new window.google.maps.Geocoder();
+      geocoder.geocode({ address: nuevoPlan.location }, (results, status) => {
+        if (status === "OK" && results[0]) {
+          const { lat, lng } = results[0].geometry.location;
+          setCoords({ lat: lat(), lng: lng() });
+          setNuevoPlan(prev => ({
+            ...prev,
+            latitude: lat(),
+            longitude: lng(),
+            locationAddress: results[0].formatted_address
+          }));
+        }
+      });
+    }
+  }, [nuevoPlan.location, isLoaded]);
 
   // --- Compresión de imagen (Canvas) ---
   const compressImage = (file, maxWidth = 800, quality = 0.8) => {
@@ -53,7 +83,7 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
     });
   };
 
-  // --- SUBIR imágenes al mismo path que la app móvil ---
+  // --- SUBIR imágenes a Firebase ---
   const uploadImagesToFirebase = async (files, userId, planId) => {
     if (!files || files.length === 0) return [];
     const urls = [];
@@ -69,30 +99,25 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
     return urls;
   };
 
-  // --- Manejar selección de imágenes (solo guarda archivos y previews) ---
+  // --- Manejar imágenes ---
   const manejarImagenes = (filesList) => {
     if (!filesList || filesList.length === 0) return;
-
     const files = Array.from(filesList);
     const espacioRestante = 5 - imageFiles.length;
     if (espacioRestante <= 0) {
       setErrores(prev => ({ ...prev, imagenes: 'Máximo 5 imágenes permitidas' }));
       return;
     }
-
     const toAdd = files.slice(0, espacioRestante);
     const newPreviews = toAdd.map(f => URL.createObjectURL(f));
-
     setImageFiles(prev => [...prev, ...toAdd]);
     setPreviewUrls(prev => [...prev, ...newPreviews]);
     setErrores(prev => ({ ...prev, imagenes: undefined }));
   };
 
-  // --- Eliminar imagen seleccionada (archivo + preview) ---
   const eliminarImagen = (index) => {
     setImageFiles(prev => prev.filter((_, i) => i !== index));
     setPreviewUrls(prev => {
-      // Liberar URL para evitar memory leaks
       URL.revokeObjectURL(prev[index]);
       return prev.filter((_, i) => i !== index);
     });
@@ -104,38 +129,16 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
       alert('La geolocalización no está soportada en este navegador');
       return;
     }
-
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
+      (position) => {
         const { latitude, longitude } = position.coords;
-
-        try {
-          const response = await fetch(
-            `https://api.opencagedata.com/geocode/v1/json?q=${latitude}+${longitude}&key=YOUR_API_KEY`
-          );
-          const data = await response.json();
-
-          if (data.results && data.results.length > 0) {
-            const result = data.results[0];
-            setNuevoPlan(prev => ({
-              ...prev,
-              latitude,
-              longitude,
-              location: result.formatted || `${latitude}, ${longitude}`,
-              locationAddress: result.formatted,
-              city: result.components.city || result.components.town || '',
-              state: result.components.state || ''
-            }));
-          }
-        } catch (error) {
-          console.error('Error obteniendo dirección:', error);
-          setNuevoPlan(prev => ({
-            ...prev,
-            latitude,
-            longitude,
-            location: `${latitude}, ${longitude}`
-          }));
-        }
+        setCoords({ lat: latitude, lng: longitude });
+        setNuevoPlan(prev => ({
+          ...prev,
+          latitude,
+          longitude,
+          location: `${latitude}, ${longitude}`
+        }));
       },
       (error) => {
         console.error('Error obteniendo ubicación:', error);
@@ -147,10 +150,8 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
   // --- Validación ---
   const validarFormulario = () => {
     const nuevosErrores = {};
-
     if (!nuevoPlan.title.trim()) nuevosErrores.title = 'El título es obligatorio';
     if (!nuevoPlan.description.trim()) nuevosErrores.description = 'La descripción es obligatoria';
-
     if (!nuevoPlan.date) {
       nuevosErrores.date = 'La fecha es obligatoria';
     } else {
@@ -161,44 +162,33 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
         nuevosErrores.date = 'La fecha no puede ser anterior a hoy';
       }
     }
-
     if (!nuevoPlan.timeString) nuevosErrores.time = 'La hora es obligatoria';
     if (!nuevoPlan.location.trim()) nuevosErrores.location = 'La ubicación es obligatoria';
-
     if (nuevoPlan.enableWhatsapp && !nuevoPlan.phoneNumber.trim()) {
       nuevosErrores.phoneNumber = 'El número de WhatsApp es obligatorio';
     }
-
     if (imageFiles.length === 0) {
       nuevosErrores.imagenes = 'Debes seleccionar al menos una imagen';
     }
-
     setErrores(nuevosErrores);
     return Object.keys(nuevosErrores).length === 0;
   };
 
-  // --- CREAR PLAN (mismo flujo que móvil) ---
+  // --- Crear Plan ---
   const crearPlan = async (e) => {
     e.preventDefault();
     if (!validarFormulario()) return;
     setCreandoPlan(true);
-
     try {
       const user = auth.currentUser;
       if (!user) throw new Error("Usuario no autenticado");
-
-      // 1) Generar ID igual que en móvil
       const planId = uuidv4();
-
-      // 2) Subir imágenes primero
       const imageUrls = await uploadImagesToFirebase(imageFiles, user.uid, planId);
-
-      // 3) Construir objeto plan (milisegundos como en Kotlin)
       const dateMs = new Date(`${nuevoPlan.date}T${nuevoPlan.timeString}`).getTime();
       const planData = {
-        id: planId,               // igual que en Kotlin
+        id: planId,
         userId: user.uid,
-        createdAt: Date.now(),    // System.currentTimeMillis()
+        createdAt: Date.now(),
         title: nuevoPlan.title.trim(),
         description: nuevoPlan.description.trim(),
         date: dateMs || 0,
@@ -217,13 +207,8 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
         commentCount: 0,
         shares: 0
       };
-
-      // 4) Guardar con MISMO ID que móvil
       await setDoc(doc(db, 'planes', planId), planData);
-
-      // 5) Notificar y limpiar
       if (onPlanCreated) onPlanCreated({ id: planId, ...planData });
-      // Revocar previews
       previewUrls.forEach(url => URL.revokeObjectURL(url));
       setPreviewUrls([]);
       setImageFiles([]);
@@ -243,7 +228,6 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
       });
       setErrores({});
       onClose();
-
     } catch (error) {
       console.error("❌ Error al crear plan:", error);
       setErrores({ general: "Error al crear el plan: " + (error?.message || 'desconocido') });
@@ -257,18 +241,21 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-y-auto max-h-[90vh]">
-
         {/* Header */}
-        <div className="flex justify-between items-center p-6 border-b bg-gradient-to-r from-pink-500 to-purple-600">
-          <h2 className="text-xl font-bold text-white">Crear Plan Increíble</h2>
-          <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-full transition-colors">
+        <div className="flex items-center p-6 border-b bg-gradient-to-r from-pink-500 to-purple-600">
+          <div className="flex-1 flex justify-center">
+            <h2 className="text-xl font-bold text-white text-center">¡Crear Plan Increíble!</h2><span className="text-2xl">✨</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-white/20 rounded-full transition-colors ml-auto"
+          >
             <X className="w-6 h-6 text-white" />
           </button>
         </div>
 
         {/* Formulario */}
         <form onSubmit={crearPlan} className="p-6 space-y-4">
-
           {errores.general && (
             <div className="p-3 bg-red-100 border border-red-300 text-red-700 rounded-lg">
               {errores.general}
@@ -306,101 +293,54 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
             {errores.description && <p className="text-red-500 text-sm mt-1">{errores.description}</p>}
           </div>
 
-          {/* Fecha y Hora */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <Calendar className="inline w-4 h-4 mr-1" />
-                Fecha *
-              </label>
-              <input
-                type="date"
-                value={nuevoPlan.date}
-                onChange={(e) => setNuevoPlan({ ...nuevoPlan, date: e.target.value })}
-                className={`w-full p-3 border rounded-lg transition-colors ${errores.date ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-purple-500'}`}
-                min={new Date().toISOString().split('T')[0]}
-                required
-              />
-              {errores.date && <p className="text-red-500 text-sm mt-1">{errores.date}</p>}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <Clock className="inline w-4 h-4 mr-1" />
-                Hora *
-              </label>
-              <input
-                type="time"
-                value={nuevoPlan.timeString}
-                onChange={(e) => setNuevoPlan({ ...nuevoPlan, timeString: e.target.value })}
-                className={`w-full p-3 border rounded-lg transition-colors ${errores.time ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-purple-500'}`}
-                required
-              />
-              {errores.time && <p className="text-red-500 text-sm mt-1">{errores.time}</p>}
-            </div>
-          </div>
-
-          {/* Ubicación */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              <MapPin className="inline w-4 h-4 mr-1" />
-              Ubicación *
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="¿Dónde será el plan?"
-                value={nuevoPlan.location}
-                onChange={(e) => setNuevoPlan({ ...nuevoPlan, location: e.target.value })}
-                className={`flex-1 p-3 border rounded-lg transition-colors ${errores.location ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-purple-500'}`}
-                required
-              />
-              <button
-                type="button"
-                onClick={obtenerUbicacionActual}
-                className="px-4 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors flex items-center"
-                title="Obtener ubicación actual"
-              >
-                <MapPin className="w-4 h-4" />
-              </button>
-            </div>
-            {errores.location && <p className="text-red-500 text-sm mt-1">{errores.location}</p>}
-
-            {(nuevoPlan.city || nuevoPlan.state) && (
-              <div className="mt-2 p-2 bg-blue-50 rounded-lg text-sm text-blue-700">
-                <MapPin className="inline w-4 h-4 mr-1" />
-                {nuevoPlan.city && `Ciudad: ${nuevoPlan.city}`}
-                {nuevoPlan.city && nuevoPlan.state && ' | '}
-                {nuevoPlan.state && `Departamento: ${nuevoPlan.state}`}
-              </div>
-            )}
-          </div>
-
-          {/* WhatsApp */}
-          <div className="space-y-2 bg-green-50 p-4 rounded-lg border border-green-200">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={nuevoPlan.enableWhatsapp}
-                onChange={(e) => setNuevoPlan({ ...nuevoPlan, enableWhatsapp: e.target.checked })}
-                className="w-4 h-4 text-green-600"
-              />
-              <MessageCircle className="w-5 h-5 text-green-600" />
-              <span className="text-gray-700 font-medium">Habilitar contacto por WhatsApp</span>
-            </label>
-
-            {nuevoPlan.enableWhatsapp && (
+            {/* Fecha y Hora */}
+              <div className="grid grid-cols-2 gap-6">
+              {/* Hora */}
               <div>
-                <input
-                  type="tel"
-                  placeholder="Número de WhatsApp (ej: +57 300 123 4567)"
-                  value={nuevoPlan.phoneNumber}
-                  onChange={(e) => setNuevoPlan({ ...nuevoPlan, phoneNumber: e.target.value })}
-                  className={`w-full p-3 border rounded-lg transition-colors ${errores.phoneNumber ? 'border-red-300 bg-red-50' : 'border-gray-300 focus:border-green-500'}`}
-                />
-                {errores.phoneNumber && <p className="text-red-500 text-sm mt-1">{errores.phoneNumber}</p>}
+                <label className="text-sm font-semibold text-gray-600 mb-2 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-purple-500" />
+                  Hora 
+                </label>
+                <div className="relative">
+                  <input
+                    type="time"
+                    value={nuevoPlan.timeString}
+                    onChange={(e) => setNuevoPlan({ ...nuevoPlan, timeString: e.target.value })}
+                    className={`w-full p-3 pl-10 border rounded-xl shadow-sm transition-all
+                      focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-400
+                      ${errores.time ? 'border-red-300 bg-red-50' : 'border-gray-300'}
+                    `}
+                    required
+                  />
+                  <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-purple-500 w-5 h-5" />
+                </div>
+                {errores.time && <p className="text-red-500 text-xs mt-2">{errores.time}</p>}
               </div>
-            )}
-          </div>
+
+              {/* Fecha */}
+              <div>
+                <label className="text-sm font-semibold text-gray-600 mb-2 flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-pink-500" />
+                 Fecha 
+                </label>
+                <div className="relative">
+                  <input
+                    type="date"
+                    value={nuevoPlan.date}
+                    onChange={(e) => setNuevoPlan({ ...nuevoPlan, date: e.target.value })}
+                    className={`w-full p-3 pl-10 border rounded-xl shadow-sm transition-all
+                      focus:outline-none focus:ring-2 focus:ring-pink-400 focus:border-pink-400
+                      ${errores.date ? 'border-red-300 bg-red-50' : 'border-gray-300'}
+                    `}
+                    min={new Date().toISOString().split('T')[0]}
+                    required
+                  />
+                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-pink-500 w-5 h-5" />
+                </div>
+                {errores.date && <p className="text-red-500 text-xs mt-2">{errores.date}</p>}
+              </div>
+              </div>
+
 
           {/* Imágenes */}
           <div>
@@ -432,9 +372,9 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
                     <button
                       type="button"
                       onClick={() => eliminarImagen(i)}
-                      className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
                 ))}
@@ -442,21 +382,24 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
             )}
           </div>
 
-          {/* Botón enviar */}
-          <button
-            type="submit"
-            disabled={creandoPlan}
-            className="w-full py-3 bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-lg font-bold hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2"
-          >
-            {creandoPlan ? (
-              <>
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                Creando plan...
-              </>
-            ) : (
-              "Crear Plan"
-            )}
-          </button>
+          {/* Botones */}
+          <div className="flex justify-center gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-5 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
+              disabled={creandoPlan}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={creandoPlan}
+              className="px-6 py-2 rounded-lg bg-gradient-to-r from-pink-500 to-purple-600 text-white hover:opacity-90 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {creandoPlan ? 'Creando...' : 'Crear Plan 🎉'}
+            </button>
+          </div>
         </form>
       </div>
     </div>

@@ -315,8 +315,6 @@ const Home = ({ user, onLogout }) => {
     }
   };
 
-  // (Eliminado: función duplicada manejarImagenes)
-
   // Eliminar imagen
   const eliminarImagen = (index) => {
     setNuevoPlan(prev => ({
@@ -726,49 +724,23 @@ const manejarImagenes = async (files) => {
           </div>
         </div>
       )}
-
-
-
-
-
-
-      
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-      
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+
         {/* Botón crear plan mejorado */}
         <div className="text-center mb-12">
           <div className="relative">
              <div>
-              <button onClick={() => setShowModal(true)}>
-                Crear Plan
+              <button onClick={() => setShowModal(true)}
+                className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 hover:from-pink-600 hover:via-purple-600 hover:to-indigo-600 text-white px-10 py-4 rounded-full font-bold text-lg shadow-2xl hover:shadow-3xl transform hover:scale-105 transition-all duration-300 flex items-center gap-3 mx-auto relative overflow-hidden"
+                >
+                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -skew-x-12 transform translate-x-full group-hover:translate-x-[-200%] transition-transform duration-1000"></div>
+              <Plus className="w-6 h-6" />
+              <span>¡Crear Plan Increíble!</span>
+              <span className="text-2xl">✨</span>
               </button>
-              
+
+
               <PlanModal 
                 isOpen={showModal}
                 onClose={() => setShowModal(false)}
