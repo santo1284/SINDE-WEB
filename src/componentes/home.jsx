@@ -1,18 +1,21 @@
 import React, { useEffect, useState } from 'react';
+import PlanModal from './PlanModal';
+import { v4 as uuidv4 } from "uuid"; 
 import { 
   arrayUnion, 
   doc, 
   updateDoc,
   collection,
+  addDoc,
+  serverTimestamp,
   onSnapshot,
   arrayRemove,
-  addDoc,
   query,
   orderBy,
   limit, 
   getDocs
 } from 'firebase/firestore';
-import { db, auth } from '../firebase/firebase-config';
+import { db, storage, auth } from '../firebase/firebase-config';
 import {
   User,
   LogOut,
@@ -41,6 +44,69 @@ import Slider from 'react-slick';
 import 'slick-carousel/slick/slick.css';
 import 'slick-carousel/slick/slick-theme.css';
 import logoSinde from '../assets/logo-sindesparches.png';
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import imageCompression from "browser-image-compression";
+
+// Utilidades para manejo de imágenes y datos
+const ImageUtils = {
+  // Comprimir imagen manteniendo calidad
+  compressImage: (file, maxWidth = 800, quality = 0.8) => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        // Calcular nuevas dimensiones manteniendo aspect ratio
+        const ratio = Math.min(maxWidth / img.width, maxWidth / img.height);
+        canvas.width = img.width * ratio;
+        canvas.height = img.height * ratio;
+        
+        // Dibujar imagen redimensionada
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        // Convertir a blob con compresión
+        canvas.toBlob(resolve, 'image/jpeg', quality);
+      };
+      
+      img.src = URL.createObjectURL(file);
+    });
+  },
+
+  // Convertir blob a base64 para almacenamiento
+  blobToBase64: (blob) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+  }
+};
+
+// Hook personalizado para geolocalización
+const useGeolocation = () => {
+  const [location, setLocation] = useState(null);
+  const [error, setError] = useState(null);
+
+  const getLocation = () => {
+    if (!navigator.geolocation) {
+      setError('Geolocalización no soportada');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude
+        });
+      },
+      (err) => setError('Error obteniendo ubicación: ' + err.message)
+    );
+  };
+
+  return { location, error, getLocation };
+};
 
 const Home = ({ user, onLogout, onShowPerfil }) => {   // 👈 añadí onShowPerfil aquí
   const [planes, setPlanes] = useState([]);
@@ -56,6 +122,15 @@ const Home = ({ user, onLogout, onShowPerfil }) => {   // 👈 añadí onShowPer
     planTitle: ''
   });
   const [modalCrearPlan, setModalCrearPlan] = useState(false);
+
+  const [showModal, setShowModal] = useState(false);
+  
+  const handlePlanCreated = (newPlan) => {
+    console.log('Plan creado:', newPlan);
+    // Actualizar tu lista de planes
+  };
+  
+  // Estado mejorado para nuevo plan
   const [nuevoPlan, setNuevoPlan] = useState({
     title: '',
     description: '',
@@ -63,8 +138,21 @@ const Home = ({ user, onLogout, onShowPerfil }) => {   // 👈 añadí onShowPer
     date: '',
     time: '',
     location: '',
-    imageUrls: []
+    locationAddress: '',
+    city: '',
+    state: '',
+    latitude: null,
+    longitude: null,
+    imageUrls: [],
+    enableWhatsapp: false,
+    phoneNumber: ''
   });
+
+  const [creandoPlan, setCreandoPlan] = useState(false);
+  const [subiendoImagenes, setSubiendoImagenes] = useState(false);
+  const [errores, setErrores] = useState({});
+  const { location, getLocation } = useGeolocation();
+
 
   const handleLogout = async () => {
     try {
@@ -227,6 +315,211 @@ const Home = ({ user, onLogout, onShowPerfil }) => {   // 👈 añadí onShowPer
     }
   };
 
+  // (Eliminado: función duplicada manejarImagenes)
+
+  // Eliminar imagen
+  const eliminarImagen = (index) => {
+    setNuevoPlan(prev => ({
+      ...prev,
+      imageUrls: prev.imageUrls.filter((_, i) => i !== index)
+    }));
+  };
+
+  // Obtener ubicación actual
+  const obtenerUbicacionActual = () => {
+    getLocation();
+  };
+
+  // Efecto para actualizar ubicación cuando se obtiene
+  useEffect(() => {
+    if (location) {
+      setNuevoPlan(prev => ({
+        ...prev,
+        latitude: location.latitude,
+        longitude: location.longitude
+      }));
+      
+      // Geocodificación inversa para obtener dirección
+      geocodificarUbicacion(location.latitude, location.longitude);
+    }
+  }, [location]);
+
+  // Geocodificación inversa
+  const geocodificarUbicacion = async (lat, lng) => {
+    try {
+      // Usando un servicio de geocodificación (ejemplo con OpenStreetMap Nominatim)
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        const address = data.display_name;
+        const city = data.address?.city || data.address?.town || data.address?.village || '';
+        const state = data.address?.state || '';
+        
+        setNuevoPlan(prev => ({
+          ...prev,
+          locationAddress: address,
+          city: city,
+          state: state,
+          location: address // También actualizar el campo location principal
+        }));
+      }
+    } catch (error) {
+      console.error('Error en geocodificación:', error);
+    }
+  };
+
+  // Validar formulario
+  const validarFormulario = () => {
+    const erroresTemp = {};
+    
+    if (!nuevoPlan.title.trim()) {
+      erroresTemp.title = 'El título es obligatorio';
+    }
+    
+    if (!nuevoPlan.description.trim()) {
+      erroresTemp.description = 'La descripción es obligatoria';
+    }
+    
+    if (!nuevoPlan.date) {
+      erroresTemp.date = 'La fecha es obligatoria';
+    }
+    
+    if (!nuevoPlan.time) {
+      erroresTemp.time = 'La hora es obligatoria';
+    }
+    
+    if (!nuevoPlan.location.trim()) {
+      erroresTemp.location = 'La ubicación es obligatoria';
+    }
+
+    if (nuevoPlan.enableWhatsapp && !nuevoPlan.phoneNumber.trim()) {
+      erroresTemp.phoneNumber = 'El número de teléfono es obligatorio si WhatsApp está habilitado';
+    }
+    
+    setErrores(erroresTemp);
+    return Object.keys(erroresTemp).length === 0;
+  };
+
+// 🔹 Función igual a la de móvil pero en JS
+const uploadImagesToFirebase = async (imageFiles, userId, planId) => {
+  const urls = [];
+  for (let file of imageFiles) {
+    try {
+      const compressedBlob = await ImageUtils.compressImage(file);
+      const imageName = `${crypto.randomUUID()}.jpg`;
+      const storageRef = ref(storage, `planes/${userId}/${planId}/${imageName}`);
+      const snapshot = await uploadBytes(storageRef, compressedBlob);
+      const url = await getDownloadURL(snapshot.ref);
+      urls.push(url);
+    } catch (err) {
+      console.error("❌ Error subiendo imagen:", err);
+    }
+  }
+  return urls;
+};
+
+// 🔹 Crear plan (idéntico flujo a móvil)
+const crearPlan = async (e) => {
+  e.preventDefault();
+  if (!validarFormulario()) return;
+  setCreandoPlan(true);
+
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Usuario no autenticado");
+
+    // ✅ Generar ID igual que en la app móvil
+    const planId = uuidv4();
+
+    // Subir imágenes
+    const imagenesComprimidas = await uploadImagesToFirebase(
+      nuevoPlan.imageUrls,
+      user.uid,
+      planId
+    );
+
+    // Crear objeto plan
+    const planData = {
+      id: planId, // 👈 importante, igual que en Kotlin
+      userId: user.uid,
+      createdAt: Date.now(), // 👈 en móvil usas System.currentTimeMillis()
+      title: nuevoPlan.title.trim(),
+      description: nuevoPlan.description.trim(),
+      date: new Date(`${nuevoPlan.date}T${nuevoPlan.timeString}`).getTime(),
+      timeString: nuevoPlan.timeString,
+      location: nuevoPlan.location.trim(),
+      latitude: nuevoPlan.latitude,
+      longitude: nuevoPlan.longitude,
+      locationAddress: nuevoPlan.locationAddress,
+      city: nuevoPlan.city,
+      state: nuevoPlan.state,
+      imageUrls: imagenesComprimidas,
+      enableWhatsapp: nuevoPlan.enableWhatsapp,
+      phoneNumber: nuevoPlan.enableWhatsapp ? nuevoPlan.phoneNumber.trim() : "",
+      likes: [],
+      participants: [],
+      commentCount: 0,
+      shares: 0,
+    };
+
+    // ✅ Guardar con el mismo ID
+    await setDoc(doc(db, "planes", planId), planData);
+
+    console.log("✅ Plan creado con ID:", planId);
+    alert("¡Plan creado exitosamente!");
+
+    setNuevoPlan({});
+    setErrores({});
+    setModalCrearPlan(false);
+  } catch (error) {
+    console.error("❌ Error al crear plan:", error);
+    setErrores({ general: "Error al crear el plan. Inténtalo nuevamente." });
+  } finally {
+    setCreandoPlan(false);
+  }
+};
+
+
+
+
+// FUNCIÓN MEJORADA PARA MANEJAR IMÁGENES
+const manejarImagenes = async (files) => {
+  if (!files || files.length === 0) return;
+
+  try {
+    // Aquí NO subimos todavía, solo guardamos los File
+    const nuevasImagenes = Array.from(files).filter(
+      (file) => file.type.startsWith("image/") && file.size <= 10 * 1024 * 1024
+    );
+
+    // Guardamos los files en el estado (para subirlos después en crearPlan)
+    setNuevoPlan((prev) => ({
+      ...prev,
+      imageUrls: [...prev.imageUrls, ...nuevasImagenes].slice(0, 5),
+    }));
+  } catch (error) {
+    console.error("Error procesando imágenes:", error);
+    setErrores((prev) => ({
+      ...prev,
+      imagenes: "Error al procesar las imágenes",
+    }));
+  }
+};
+
+
+  // Abrir en Google Maps
+  const abrirEnGoogleMaps = () => {
+    if (nuevoPlan.location.trim()) {
+      const encodedLocation = encodeURIComponent(nuevoPlan.location);
+      window.open(`https://maps.google.com/maps?q=${encodedLocation}`, '_blank');
+    } else {
+      alert('Primero escribe una dirección');
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'planes'), (snapshot) => {
       const planesData = snapshot.docs.map((doc) => ({
@@ -259,12 +552,12 @@ const Home = ({ user, onLogout, onShowPerfil }) => {   // 👈 añadí onShowPer
     .sort((a, b) => {
       const fechaA = a.date?.toDate?.() || new Date(a.date);
       const fechaB = b.date?.toDate?.() || new Date(b.date);
-      return fechaB - fechaA;
+      return fechaB - fechaA; 
     });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
-      {/* HEADER MEJORADO */}
+      {/* HEADER */}
       <header className="bg-gradient-to-b from-black/80 to-transparent text-white top-0 z-50 shadow-xl sticky">
         <div className="flex items-center justify-between px-6 py-4">
           {/* Logo y nombre */}
@@ -329,7 +622,6 @@ const Home = ({ user, onLogout, onShowPerfil }) => {   // 👈 añadí onShowPer
                 onClick={() => setShowNotifications(!showNotifications)}
               >
                 <Bell className="w-5 h-5 text-white" />
-                {/* Indicator de notificaciones */}
                 <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
               </button>
 
@@ -342,7 +634,7 @@ const Home = ({ user, onLogout, onShowPerfil }) => {   // 👈 añadí onShowPer
                 <Settings className="w-5 h-5 text-white" />
               </button>
 
-              {/* BOTÓN DE CERRAR SESIÓN - MEJORADO */}
+              {/* Cerrar Sesión */}
               <button
                 title="Cerrar Sesión"
                 onClick={handleLogout}
@@ -371,30 +663,9 @@ const Home = ({ user, onLogout, onShowPerfil }) => {   // 👈 añadí onShowPer
             </div>
           </div>
         </div>
-
-        {/* Categorías */}
-        <div className="bg-white/95 backdrop-blur-sm text-gray-800 flex justify-center items-center gap-4 md:gap-8 py-4 text-xs md:text-sm font-bold border-t border-white/20 overflow-x-auto scrollbar-hide">
-          {[
-            { emoji: '🎓', label: 'EDUCACIÓN' },
-            { emoji: '🏅', label: 'DEPORTE' },
-            { emoji: '🎭', label: 'CULTURA' },
-            { emoji: '🍳', label: 'GASTRONOMÍA' },
-            { emoji: '🧳', label: 'TURISMO' },
-            { emoji: '🌐', label: 'RUMBA' },
-            { emoji: '🧸', label: 'INFANTIL' }
-          ].map((categoria, index) => (
-            <div 
-              key={index}
-              className="flex items-center gap-2 whitespace-nowrap cursor-pointer hover:text-pink-600 hover:scale-105 transition-all duration-200 px-3 py-2 rounded-full hover:bg-pink-50"
-            >
-              <span className="text-lg">{categoria.emoji}</span>
-              <span className="hidden sm:inline">{categoria.label}</span>
-            </div>
-          ))}
-        </div>
       </header>
 
-      {/* MENU DESPLEGABLE MEJORADO */}
+      {/* MENU DESPLEGABLE */}
       {menuOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex justify-end" onClick={() => setMenuOpen(false)}>
           <div 
@@ -459,19 +730,54 @@ const Home = ({ user, onLogout, onShowPerfil }) => {   // 👈 añadí onShowPer
         </div>
       )}
 
+
+
+
+
+
+      
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Botón crear plan mejorado */}
         <div className="text-center mb-12">
           <div className="relative">
-            <button
-              onClick={() => setModalCrearPlan(true)}
-              className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 hover:from-pink-600 hover:via-purple-600 hover:to-indigo-600 text-white px-10 py-4 rounded-full font-bold text-lg shadow-2xl hover:shadow-3xl transform hover:scale-105 transition-all duration-300 flex items-center gap-3 mx-auto relative overflow-hidden"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -skew-x-12 transform translate-x-full group-hover:translate-x-[-200%] transition-transform duration-1000"></div>
-              <Plus className="w-6 h-6" />
-              <span>¡Crear Plan Increíble!</span>
-              <span className="text-2xl">✨</span>
-            </button>
+             <div>
+              <button onClick={() => setShowModal(true)}>
+                Crear Plan
+              </button>
+              
+              <PlanModal 
+                isOpen={showModal}
+                onClose={() => setShowModal(false)}
+                onPlanCreated={handlePlanCreated}
+              />
+            </div>
             <p className="text-white/80 mt-2 text-sm">Comparte tu idea y encuentra compañeros de aventura</p>
           </div>
         </div>
@@ -573,12 +879,43 @@ const Home = ({ user, onLogout, onShowPerfil }) => {   // 👈 añadí onShowPer
                         {plan.description}
                       </p>
                       
-                      {plan.date && (
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
-                          <Calendar className="w-4 h-4" />
-                          <span>{formatDate(plan.date)}</span>
-                        </div>
-                      )}
+                      {/* Información de fecha, hora y ubicación */}
+                      <div className="space-y-2">
+                        {plan.date && (
+                          <div className="flex items-center gap-2 text-sm text-gray-500">
+                            <Calendar className="w-4 h-4" />
+                            <span>{formatDate(plan.date)}</span>
+                            {plan.time && <span>• {plan.time}</span>}
+                          </div>
+                        )}
+
+                        {plan.location && (
+                          <div className="flex items-center gap-2 text-sm text-gray-500">
+                            <MapPin className="w-4 h-4" />
+                            <span className="truncate">{plan.location}</span>
+                          </div>
+                        )}
+
+                        {plan.city && (
+                          <div className="text-xs text-gray-400">
+                            📍 {plan.city}{plan.state && `, ${plan.state}`}
+                          </div>
+                        )}
+
+                        {/* WhatsApp contact */}
+                        {plan.enableWhatsapp && plan.phoneNumber && (
+                          <div className="mt-2">
+                            <a
+                              href={`https://wa.me/${plan.phoneNumber.replace(/\D/g, '')}?text=Hola! Vi tu plan "${plan.title}" en SindesParches y me interesa participar.`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-full text-sm font-medium transition-all duration-200 hover:scale-105"
+                            >
+                              🟢 WhatsApp
+                            </a>
+                          </div>
+                        )}
+                      </div>
 
                       {/* Acciones del plan */}
                       <div className="flex items-center justify-between pt-4 border-t border-gray-100">
@@ -664,7 +1001,7 @@ const Home = ({ user, onLogout, onShowPerfil }) => {   // 👈 añadí onShowPer
           )}
         </section>
 
-        {/* Modal de comentarios mejorado */}
+        {/* Modal de comentarios */}
         {modalComentarios.isOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
