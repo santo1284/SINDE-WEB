@@ -108,7 +108,7 @@ const useGeolocation = () => {
   return { location, error, getLocation };
 };
 
-const Home = ({ user, onLogout }) => {
+const Home = ({ user, onLogout, onShowPerfil }) => {   // 👈 añadí onShowPerfil aquí
   const [planes, setPlanes] = useState([]);
   const [busqueda, setBusqueda] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
@@ -605,13 +605,13 @@ const manejarImagenes = async (files) => {
             {/* Botones de acción */}
             <div className="flex gap-2 items-center">
               {/* Perfil */}
-              <button
-                title="Mi Perfil"
-                className="bg-white/20 hover:bg-white/30 backdrop-blur-sm p-3 rounded-full transition-all duration-200 hover:scale-110"
-                onClick={() => alert('Perfil - Próximamente')}
-              >
-                <User className="w-5 h-5 text-white" />
-              </button>
+                        <button
+              title="Mi Perfil"
+              className="bg-white/20 hover:bg-white/30 backdrop-blur-sm p-3 rounded-full transition-all duration-200 hover:scale-110"
+              onClick={onShowPerfil}   // 👈 cambio aquí
+            >
+              <User className="w-5 h-5 text-white" />
+            </button>
 
               {/* Notificaciones */}
               <button
@@ -695,10 +695,13 @@ const manejarImagenes = async (files) => {
 
             <div className="p-6">
               <nav className="space-y-4">
-                <button className="w-full flex items-center gap-3 text-left p-3 hover:bg-gray-50 rounded-lg transition-colors">
-                  <User className="w-5 h-5 text-gray-500" />
-                  <span className="text-gray-700">Mi Perfil</span>
-                </button>
+              <button
+                onClick={onShowPerfil}   // 👈 aquí también
+                className="w-full flex items-center gap-3 text-left p-3 hover:bg-gray-50 rounded-lg transition-colors"
+              >
+                <User className="w-5 h-5 text-gray-500" />
+                <span className="text-gray-700">Mi Perfil</span>
+              </button>
                 
                 <button className="w-full flex items-center gap-3 text-left p-3 hover:bg-gray-50 rounded-lg transition-colors">
                   <Bell className="w-5 h-5 text-gray-500" />
