@@ -2,7 +2,7 @@
 import React, { useState, useRef } from "react";
 import { db, storage } from "../firebase/firebase-config";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { ref, uploadBytes } from "firebase/storage";
 import { Plus } from "lucide-react"; // icono +
 
 const CrearPerfil = ({ user, onPerfilCreado }) => {
@@ -39,26 +39,25 @@ const CrearPerfil = ({ user, onPerfilCreado }) => {
 
     setLoading(true);
     try {
-      let fotoURL = "";
-
+      // 🔹 Subir foto a Firebase Storage (si el usuario seleccionó una)
       if (foto) {
         const storageRef = ref(storage, `profile_pictures/${user.uid}`);
         await uploadBytes(storageRef, foto);
-        fotoURL = await getDownloadURL(storageRef);
       }
 
+      // 🔹 Guardar perfil en Firestore (sin fotoURL)
       await setDoc(doc(db, "perfil", user.uid), {
         nombre,
         celular,
         ciudad,
         edad: Number(edad),
         email: user.email,
-        fotoURL,
         aceptaTerminos: true,
         timestamp: serverTimestamp(),
       });
 
-      onPerfilCreado();
+      // ✅ Llamar callback para redirigir al Home
+      if (onPerfilCreado) onPerfilCreado();
     } catch (error) {
       console.error("Error guardando perfil:", error);
       alert("Hubo un error al guardar el perfil");
@@ -73,7 +72,6 @@ const CrearPerfil = ({ user, onPerfilCreado }) => {
         onSubmit={handleGuardarPerfil}
         className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md relative"
       >
-  
         {/* Título */}
         <h2 className="text-2xl font-bold mb-6 text-center text-gray-800">
           Crear Perfil

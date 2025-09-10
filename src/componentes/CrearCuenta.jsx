@@ -36,14 +36,14 @@ function CrearCuenta({ onCrearCuentaSuccess, onShowLogin }) {
       );
       const user = userCredential.user;
 
-      // 🔹 Guardar nombre en el perfil de Firebase Auth
+      // 🔹 Guardar nombre en Firebase Auth (opcional)
       await updateProfile(user, { displayName: nombre });
 
-      // 🔹 Guardar datos en Firestore con fechaUnion
+      // 🔹 Guardar datos mínimos en Firestore
       await setDoc(doc(db, "perfil", user.uid), {
         uid: user.uid,
-        nombre,
         correo,
+        nombre: nombre || "",
         aceptoTerminos: true,
         fechaUnion: serverTimestamp(),
       });
@@ -51,7 +51,8 @@ function CrearCuenta({ onCrearCuentaSuccess, onShowLogin }) {
       // 🔹 Enviar correo de verificación
       await sendEmailVerification(user);
 
-      onCrearCuentaSuccess(user);
+      if (onCrearCuentaSuccess) onCrearCuentaSuccess();
+
     } catch (err) {
       console.error("Error creando cuenta:", err);
       if (err.code === "auth/email-already-in-use") {
@@ -140,11 +141,10 @@ function CrearCuenta({ onCrearCuentaSuccess, onShowLogin }) {
         </p>
       </form>
 
-      {/* ✅ Modal igual al de CrearPerfil */}
+      {/* ✅ Modal de términos */}
       {showModal && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
           <div className="bg-white rounded-2xl shadow-lg max-w-lg w-full p-6 relative">
-            {/* Botón de cerrar */}
             <button
               onClick={() => setShowModal(false)}
               className="absolute top-3 right-3 text-gray-600 hover:text-black"
@@ -158,32 +158,15 @@ function CrearCuenta({ onCrearCuentaSuccess, onShowLogin }) {
 
             <div className="text-gray-700 text-sm max-h-80 overflow-y-auto">
               <ul className="list-disc pl-5 space-y-2">
-                <li>
-                  Sindesparches no se hace responsable de la veracidad,
-                  exactitud o legitimidad de los planes publicados en la
-                  plataforma.
-                </li>
-                <li>
-                  Actúa únicamente como intermediario y no garantiza que los
-                  eventos o planes se lleven a cabo según lo anunciado.
-                </li>
-                <li>
-                  Queda eximido de toda responsabilidad legal por cualquier
-                  consecuencia derivada de la participación en actividades
-                  organizadas a través de la plataforma.
-                </li>
-                <li>
-                  Los usuarios asumen toda la responsabilidad al participar en
-                  los planes publicados.
-                </li>
-                <li>
-                  La información proporcionada será almacenada conforme a
-                  nuestra política de privacidad.
-                </li>
+                <li>Sindesparches no se hace responsable de la veracidad o legitimidad de los planes publicados.</li>
+                <li>Actúa como intermediario y no garantiza que los eventos se realicen según lo anunciado.</li>
+                <li>Exime toda responsabilidad legal por consecuencias derivadas de actividades organizadas.</li>
+                <li>Los usuarios asumen la responsabilidad al participar en los planes.</li>
+                <li>La información se almacenará conforme a la política de privacidad.</li>
               </ul>
             </div>
-            {/* Botón de cerrar */}
-           <button
+
+            <button
               onClick={() => setShowModal(false)}
               className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition"
             >
