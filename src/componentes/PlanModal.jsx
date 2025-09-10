@@ -341,8 +341,54 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
               </div>
               </div>
 
-
-          {/* Imágenes */}
+              {/* Ubicación */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <MapPin className="inline w-4 h-4 mr-1" />
+                  Ubicación *
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Escribe la dirección o lugar"
+                    value={nuevoPlan.location}
+                    onChange={(e) =>
+                      setNuevoPlan({ ...nuevoPlan, location: e.target.value })
+                    }
+                    className={`flex-1 p-3 border rounded-lg transition-colors ${
+                      errores.location
+                        ? "border-red-300 bg-red-50"
+                        : "border-gray-300 focus:border-purple-500"
+                    }`}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={obtenerUbicacionActual}
+                    className="px-3 py-2 bg-purple-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                  >
+                    Mi ubicación
+                  </button>
+                </div>
+                {errores.location && (
+                  <p className="text-red-500 text-sm mt-1">{errores.location}</p>
+                )}
+              </div>
+              
+              {/* Mapa */}
+                {isLoaded && coords && (
+                  <div className="mt-3">
+                    <GoogleMap
+                      mapContainerStyle={containerStyle}
+                      center={coords}
+                      zoom={15}
+                    >
+                      <Marker position={coords} />
+                    </GoogleMap>
+                  </div>
+                )}
+              
+            {/* Imágenes */}
           <div>
             <label className="block mb-2 text-gray-700 font-medium">
               <Camera className="inline w-5 h-5 mr-1" />
