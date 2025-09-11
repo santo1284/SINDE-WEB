@@ -1133,7 +1133,7 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
       {showNotifications && (
         <div className="fixed top-16 sm:top-20 right-3 sm:right-6 bg-white rounded-xl shadow-2xl border border-gray-200 p-4 sm:p-6 w-72 sm:w-80 z-40 max-h-96 overflow-y-auto">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base sm:text-lg font-bold text-gray-900">🔔 Notificaciones</h3>
+            <h3 className="text-base sm:text-lg font-bold text-gray-900">🔔 Notificaciones sinde</h3>
             <button
               onClick={() => setShowNotifications(false)}
               className="text-gray-500 hover:text-gray-700 p-1"
