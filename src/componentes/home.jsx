@@ -238,7 +238,7 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
     if (!texto.trim()) return;
 
     try {
-      console.log('Agregando comentario a plan:', planId);
+      console.log('Agregando comentario a planes:', planId);
       console.log('Usuario actual:', user);
       
       const commentsRef = collection(db, 'planes', planId, 'comments');
