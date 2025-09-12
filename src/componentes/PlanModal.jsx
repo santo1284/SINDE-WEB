@@ -35,6 +35,7 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
     phoneNumber: ''
   });
 
+  const libraries = ["places", "geometry"];
   const [imageFiles, setImageFiles] = useState([]);
   const [previewUrls, setPreviewUrls] = useState([]);
   const [errores, setErrores] = useState({});
@@ -46,10 +47,12 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
   const storage = getStorage();
 
   // Google Maps Loader
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: "AIzaSyCxjuEfWAO73CCvvkWyNA3dXGHc_EXOBMo",
-  });
 
+  const { isLoaded } = useJsApiLoader({
+    id: 'shared-google-maps', // MISMO ID
+    googleMapsApiKey: 'AIzaSyCxjuEfWAO73CCvvkWyNA3dXGHc_EXOBMo',
+    libraries: ['geometry', 'places', 'maps'] // MISMAS LIBRERÍAS
+  });
   // Detectar tamaño de pantalla
   const [isMobile, setIsMobile] = useState(false);
   

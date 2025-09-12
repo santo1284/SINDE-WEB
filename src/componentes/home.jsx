@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import PlanModal from './PlanModal';
+import PlanDetailsModal from './PlanDetailsModal'
 import { v4 as uuidv4 } from "uuid"; 
 import { 
   arrayUnion, 
@@ -13,7 +14,8 @@ import {
   query,
   orderBy,
   limit, 
-  getDocs
+  getDocs,
+  setDoc 
 } from 'firebase/firestore';
 import { db, storage, auth } from '../firebase/firebase-config';
 import {
@@ -37,7 +39,8 @@ import {
   Upload,
   ChevronLeft,
   ChevronRight,
-  Settings
+  Settings,
+  Eye 
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import Slider from 'react-slick';
@@ -116,16 +119,41 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
   const [comentarios, setComentarios] = useState({});
   const [ultimosComentarios, setUltimosComentarios] = useState({});
   const [cargandoComentarios, setCargandoComentarios] = useState({});
+  
+  // Estados para modales - CORREGIDO
   const [modalComentarios, setModalComentarios] = useState({
     isOpen: false,
     planId: null,
     planTitle: ''
   });
+
   const [modalCrearPlan, setModalCrearPlan] = useState(false);
-  const [showModal, setShowModal] = useState(false);
+  
+    const [modalPlanDetails, setModalPlanDetails] = useState({
+      isOpen: false,
+      plan: null
+    });
+
+      // Funciones para manejar modales - CORREGIDO
+    const cerrarModalPlanDetails = () => {
+      setModalPlanDetails({
+        isOpen: false,
+        plan: null
+      });
+    };
+
+    const abrirModalPlanDetails = (plan) => {
+      setModalPlanDetails({
+        isOpen: true,
+        plan: plan
+      });
+    };
   
   const handlePlanCreated = (newPlan) => {
     console.log('Plan creado:', newPlan);
+
+    // Cerrar modal después de crear el plan
+    setModalCrearPlan(false);
   };
   
   // Estado mejorado para nuevo plan
@@ -466,7 +494,22 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
       console.log("Plan creado con ID:", planId);
       alert("¡Plan creado exitosamente!");
 
-      setNuevoPlan({});
+      setNuevoPlan({
+        title: '',
+        description: '',
+        category: '',
+        date: '',
+        time: '',
+        location: '',
+        locationAddress: '',
+        city: '',
+        state: '',
+        latitude: null,
+        longitude: null,
+        imageUrls: [],
+        enableWhatsapp: false,
+        phoneNumber: ''
+      });
       setErrores({});
       setModalCrearPlan(false);
     } catch (error) {
@@ -724,13 +767,14 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
 
       <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8">
 
-        {/* Botón crear plan mejorado y responsivo */}
+        {/* Botón crear plan mejorado y responsivo - CORREGIDO */}
         <div className="text-center mb-8 sm:mb-10 lg:mb-12">
           <div className="relative">
             <div>
-              <button onClick={() => setShowModal(true)}
+              <button 
+                onClick={() => setModalCrearPlan(true)}
                 className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 hover:from-pink-600 hover:via-purple-600 hover:to-indigo-600 text-white px-6 sm:px-8 lg:px-10 py-3 sm:py-4 rounded-full font-bold text-sm sm:text-base lg:text-lg shadow-2xl hover:shadow-3xl transform hover:scale-105 transition-all duration-300 flex items-center gap-2 sm:gap-3 mx-auto relative overflow-hidden"
-                >
+              >
                 <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -skew-x-12 transform translate-x-full group-hover:translate-x-[-200%] transition-transform duration-1000"></div>
                 <Plus className="w-5 h-5 sm:w-6 sm:h-6" />
                 <span className="hidden sm:inline">¡Crear Plan Increíble!</span>
@@ -738,9 +782,10 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
                 <span className="text-xl sm:text-2xl">✨</span>
               </button>
 
+              {/* Modal PlanModal - CORREGIDO */}
               <PlanModal 
-                isOpen={showModal}
-                onClose={() => setShowModal(false)}
+                isOpen={modalCrearPlan}
+                onClose={() => setModalCrearPlan(false)}
                 onPlanCreated={handlePlanCreated}
               />
             </div>
@@ -881,11 +926,19 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
                             >
                               <span className="text-xs sm:text-sm">🟢</span>
                               <span className="hidden xs:inline">WhatsApp</span>
-                              <span className="xs:hidden">WA</span>
+                              <span className="xs:hidden">WhatsApp</span>
                             </a>
                           </div>
                         )}
                       </div>
+
+                      <button
+                      onClick={() => abrirModalPlanDetails(plan)} // Cambiar esta línea
+                      className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white px-4 py-2.5 rounded-lg font-medium transition-all duration-200 hover:scale-105"
+                    >
+                      <Eye className="w-4 h-4" />
+                      <span>Ver Plan</span>
+                    </button>
 
                       {/* Acciones del plan */}
                       <div className="flex items-center justify-between pt-3 sm:pt-4 border-t border-gray-100">
@@ -950,6 +1003,8 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
                           <span className="hidden sm:inline">Compartir</span>
                           <span className="sm:hidden">Share</span>
                         </button>
+
+                          
                       </div>
 
                       {/* Comentarios */}
@@ -1127,6 +1182,16 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
             </div>
           </div>
         )}
+
+      {/* MODAL COMPONENT  */}
+      {modalPlanDetails.isOpen && modalPlanDetails.plan && (
+        <PlanDetailsModal 
+          plan={modalPlanDetails.plan} 
+          user={user} 
+          isOpen={modalPlanDetails.isOpen} 
+          onClose={cerrarModalPlanDetails} 
+        />
+      )}
       </main>
 
       {/* Panel de notificaciones responsivo */}
