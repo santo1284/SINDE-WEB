@@ -2,7 +2,7 @@
 import React, { useState, useRef } from "react";
 import { db, storage } from "../firebase/firebase-config";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { ref, uploadBytes } from "firebase/storage";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage"; // 👈 añadido getDownloadURL
 import { Plus } from "lucide-react"; // icono +
 
 const CrearPerfil = ({ user, onPerfilCreado }) => {
@@ -39,19 +39,25 @@ const CrearPerfil = ({ user, onPerfilCreado }) => {
 
     setLoading(true);
     try {
+      let fotoURL = null;
+
       // 🔹 Subir foto a Firebase Storage (si el usuario seleccionó una)
       if (foto) {
         const storageRef = ref(storage, `profile_pictures/${user.uid}`);
         await uploadBytes(storageRef, foto);
+
+        // ✅ Obtener URL pública
+        fotoURL = await getDownloadURL(storageRef);
       }
 
-      // 🔹 Guardar perfil en Firestore (sin fotoURL)
+      // 🔹 Guardar perfil en Firestore con fotoURL
       await setDoc(doc(db, "perfil", user.uid), {
         nombre,
         celular,
         ciudad,
         edad: Number(edad),
         email: user.email,
+        fotoURL: fotoURL, // 👈 aquí queda guardada la URL
         aceptaTerminos: true,
         timestamp: serverTimestamp(),
       });
