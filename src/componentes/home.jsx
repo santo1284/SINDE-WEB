@@ -870,7 +870,7 @@ useEffect(() => {
                 <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -skew-x-12 transform translate-x-full group-hover:translate-x-[-200%] transition-transform duration-1000"></div>
                 <Plus className="w-5 h-5 sm:w-6 sm:h-6" />
                 <span className="hidden sm:inline">¡Crear Plan Increíble!</span>
-                <span className="sm:hidden">Crear Plan</span>
+                <span className="sm:hidden">Crear el mejor plan Plan</span>
                 <span className="text-xl sm:text-2xl">✨</span>
               </button>
 
