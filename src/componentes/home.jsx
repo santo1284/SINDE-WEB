@@ -926,7 +926,7 @@ useEffect(() => {
                 className="bg-gradient-to-r from-pink-500 to-purple-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-full font-semibold hover:scale-105 transition-transform text-sm sm:text-base"
               >
                 <span className="hidden sm:inline">Crear el Primer Plan 🚀</span>
-                <span className="sm:hidden">Crear Plan 🚀</span>
+                <span className="sm:hidden">Crear el mejor Plan 🚀</span>
               </button>
             </div>
           ) : (
