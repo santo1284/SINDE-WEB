@@ -102,7 +102,7 @@ const CrearPerfil = ({ user, onPerfilCreado }) => {
           />
         </div>
 
-        {/* Nombre */}
+        {/* Nombre vombre completo */}
         <div className="mb-4">
           <label className="block text-sm font-semibold text-gray-700">
             Nombre
