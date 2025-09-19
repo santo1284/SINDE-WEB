@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getStorage, ref, getDownloadURL } from 'firebase/storage';
 import { 
   X, 
   Heart, 
@@ -25,7 +26,8 @@ import {
   addDoc,
   onSnapshot,
   query,
-  orderBy
+  orderBy,
+  getDoc
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase-config';
 import { GoogleMap, Marker, DirectionsRenderer, useJsApiLoader } from '@react-google-maps/api';
@@ -46,10 +48,13 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
   const [directions, setDirections] = useState(null);
   const [travelTime, setTravelTime] = useState(null);
   const [mapCenter, setMapCenter] = useState(null);
+  const [creatorInfo, setCreatorInfo] = useState({ name: 'Usuario', photoURL: null }); // Nuevo estado
 
   // Hook para Google Maps
-   
- const isLoaded = Boolean(window.google?.maps);
+  const isLoaded = Boolean(window.google?.maps);
+
+  // Inicializar Firebase Storage
+  const storage = getStorage();
 
   // Cargar ubicación del usuario y calcular ruta
   useEffect(() => {
@@ -62,19 +67,16 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
           };
           setUserLocation(userPos);
           
-          // Calcular distancia y ruta si tenemos coordenadas del plan
           if (plan.latitude && plan.longitude) {
             const planPos = { lat: plan.latitude, lng: plan.longitude };
             setMapCenter(planPos);
             
-            // Calcular distancia directa
             const dist = calcularDistancia(
               userPos.lat, userPos.lng, 
               plan.latitude, plan.longitude
             );
             setDistance(dist.toFixed(1));
 
-            // Calcular ruta con Google Directions (si está disponible la API)
             if (isLoaded && window.google) {
               const directionsService = new window.google.maps.DirectionsService();
               directionsService.route({
@@ -116,15 +118,38 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
     return () => unsubscribe();
   }, [isOpen, plan.id]);
 
+  // ✅ NUEVO: Cargar nombre y foto de perfil del creador desde Firestore
+  useEffect(() => {
+    if (plan?.userId) {
+      const userProfileRef = doc(db, 'perfil', plan.userId);
+      getDoc(userProfileRef)
+        .then(docSnap => {
+          if (docSnap.exists()) {
+            const profileData = docSnap.data();
+            setCreatorInfo({
+              name: profileData.nombre, // Usar el campo 'nombre' del perfil
+              photoURL: profileData.profileImageUrl // Usar el campo 'profileImageUrl'
+            });
+          } else {
+            console.log('No se encontró el perfil del creador.');
+            setCreatorInfo({ name: plan.createdByName || 'Usuario', photoURL: null });
+          }
+        })
+        .catch(err => {
+          console.error('Error al obtener el perfil del creador', err);
+          setCreatorInfo({ name: plan.createdByName || 'Usuario', photoURL: null });
+        });
+    }
+  }, [plan?.userId]);
+
   // Función para calcular distancia
   const calcularDistancia = (lat1, lng1, lat2, lng2) => {
-    const R = 6371; // Radio de la Tierra en km
+    const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLng = (lng2 - lng1) * Math.PI / 180;
     const a = 
       Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-      Math.sin(dLng/2) * Math.sin(dLng/2);
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng/2) * Math.sin(dLng/2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     return R * c;
   };
@@ -195,7 +220,6 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
         timestamp: new Date()
       });
 
-      // Actualizar contador de comentarios
       const planRef = doc(db, 'planes', plan.id);
       await updateDoc(planRef, {
         commentCount: (plan.commentCount || 0) + 1
@@ -243,13 +267,10 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
     
     let dateObj;
     if (typeof date === 'number') {
-      // Si es timestamp en milisegundos
       dateObj = new Date(date);
     } else if (date.toDate) {
-      // Si es Firestore Timestamp
       dateObj = date.toDate();
     } else {
-      // Si es Date object
       dateObj = new Date(date);
     }
     
@@ -274,26 +295,52 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
 
   if (!isOpen || !plan) return null;
 
-  return (
+        return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
+    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
+      
+      {/* Header mejorado */}
+      <div className="relative flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50">
         
-        {/* Header */}
-        <div className="flex justify-between items-center p-6 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
-              {(plan.createdByName?.charAt(0) || 'U').toUpperCase()}
-            </div>
+        {/* Foto de perfil del creador (lado izquierdo) */}
+        <div className="flex items-center gap-3">
+          {/* ✅ LÓGICA CORREGIDA PARA LA FOTO DE PERFIL */}
+          <div className="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center">
+            {creatorInfo.photoURL ? (
+              // Si hay una URL de foto, renderiza la imagen.
+              <img 
+                src={creatorInfo.photoURL} 
+                alt={creatorInfo.name} 
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              // Si no hay URL de foto, renderiza el círculo con la inicial.
+              <div className="w-full h-full flex items-center justify-center text-white font-bold">
+                {(creatorInfo.name?.charAt(0) || 'U').toUpperCase()}
+              </div>
+            )}
+          </div>
+            
+            {/* Nombre del creador */}
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">{plan.title}</h2>
-              <p className="text-sm text-gray-600">
-                Creado por {plan.createdByName || 'Usuario'}
+              <p className="text-sm font-medium text-gray-900">
+                {creatorInfo.name}
               </p>
+              <p className="text-xs text-gray-500">Creador del plan</p>
             </div>
           </div>
+
+          {/* Título del plan (centrado) */}
+          <div className="absolute left-1/2 transform -translate-x-1/2 text-center">
+            <h2 className="text-2xl font-bold text-gray-900 max-w-md truncate">
+              {plan.title}
+            </h2>
+          </div>
+
+          {/* Botón de cerrar (lado derecho) */}
           <button 
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0"
           >
             <X className="w-6 h-6 text-gray-500" />
           </button>
@@ -566,9 +613,17 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
                     comentarios.map((comentario) => (
                       <div key={comentario.id} className="bg-white rounded-lg p-3">
                         <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold text-xs">
-                            {(comentario.userName?.charAt(0) || 'U').toUpperCase()}
-                          </div>
+                          <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold text-xs">
+                          {comentario.userPhotoURL ? (
+                            <img 
+                              src={comentario.userPhotoURL} 
+                              alt={comentario.userName} 
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            (comentario.userName?.charAt(0) || 'U').toUpperCase()
+                          )}
+                        </div> 
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="font-medium text-sm text-gray-900">

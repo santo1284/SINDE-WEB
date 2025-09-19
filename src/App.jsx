@@ -4,7 +4,7 @@ import LoginScreen from './componentes/login.jsx';
 import CrearCuenta from './componentes/CrearCuenta.jsx';
 import Home from './componentes/home.jsx';
 import CrearPerfil from './componentes/CrearPerfil.jsx';
-import Perfil from './componentes/Perfil.jsx'; // 🔹 Nuevo import
+import Perfil from './componentes/Perfil.jsx';
 import VerifyEmailModal from './componentes/VerifyEmailModal';
 import { auth, db } from './firebase/firebase-config.js';
 import { onAuthStateChanged, signOut } from 'firebase/auth';

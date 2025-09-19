@@ -205,12 +205,16 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
     try {
       const user = auth.currentUser;
       if (!user) throw new Error("Usuario no autenticado");
+      const displayName = user.displayName || (user.email ? user.email.split('@')[0] : 'Usuario');
+      const photoURL = user.photoURL || null;
       const planId = uuidv4();
       const imageUrls = await uploadImagesToFirebase(imageFiles, user.uid, planId);
       const dateMs = new Date(`${nuevoPlan.date}T${nuevoPlan.timeString}`).getTime();
       const planData = {
         id: planId,
         userId: user.uid,
+        createdByName: displayName,
+        createdByPhotoURL: photoURL,
         createdAt: Date.now(),
         title: nuevoPlan.title.trim(),
         description: nuevoPlan.description.trim(),

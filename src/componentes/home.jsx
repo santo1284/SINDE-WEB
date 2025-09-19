@@ -40,7 +40,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Settings,
-  Eye 
+  Eye,
+  Phone
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import Slider from 'react-slick';
@@ -650,33 +651,18 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
                 <User className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
               </button>
 
-              {/* Notificaciones */}
-              <button
-                title="Notificaciones"
-                className="bg-white/20 hover:bg-white/30 backdrop-blur-sm p-2 sm:p-2.5 lg:p-3 rounded-full transition-all duration-200 hover:scale-110 relative"
-                onClick={() => setShowNotifications(!showNotifications)}
-              >
-                <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-red-500 rounded-full animate-pulse"></span>
-              </button>
-
               {/* Configuración */}
               <button
-                title="Configuración"
+                title="Menu"
                 className="bg-white/20 hover:bg-white/30 backdrop-blur-sm p-2 sm:p-2.5 lg:p-3 rounded-full transition-all duration-200 hover:scale-110"
                 onClick={() => setMenuOpen(!menuOpen)}
-              >
-                <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-              </button>
-
-              {/* Cerrar Sesión */}
-              <button
-                title="Cerrar Sesión"
-                onClick={handleLogout}
-                className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 p-2 sm:p-2.5 lg:p-3 rounded-full transition-all duration-200 hover:scale-110 shadow-lg hover:shadow-xl"
-              >
-                <LogOut className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-              </button>
+             >
+              {menuOpen ? (
+                <X className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+              ) : (
+                <Menu className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+              )}
+            </button>
             </div>
           </div>
         </div>
@@ -915,21 +901,7 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
                           </div>
                         )}
 
-                        {/* WhatsApp contact */}
-                        {plan.enableWhatsapp && plan.phoneNumber && (
-                          <div className="mt-2">
-                            <a
-                              href={`https://wa.me/${plan.phoneNumber.replace(/\D/g, '')}?text=Hola! Vi tu plan "${plan.title}" en SindesParches y me interesa participar.`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 sm:gap-2 bg-green-500 hover:bg-green-600 text-white px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-medium transition-all duration-200 hover:scale-105"
-                            >
-                              <span className="text-xs sm:text-sm">🟢</span>
-                              <span className="hidden xs:inline">WhatsApp</span>
-                              <span className="xs:hidden">WhatsApp</span>
-                            </a>
-                          </div>
-                        )}
+                       
                       </div>
 
                       <button
@@ -941,86 +913,105 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
                     </button>
 
                       {/* Acciones del plan */}
-                      <div className="flex items-center justify-between pt-3 sm:pt-4 border-t border-gray-100">
-                        <div className="flex items-center gap-2 sm:gap-3">
-                          {/* Like */}
-                          <button
-                            onClick={async () => {
-                              const planRef = doc(db, 'planes', plan.id);
-                              const yaDioLike = plan.likes?.includes(user.uid);
-                              await updateDoc(planRef, {
-                                likes: yaDioLike
-                                  ? arrayRemove(user.uid)
-                                  : arrayUnion(user.uid),
-                              });
-                            }}
-                            className="flex items-center gap-1 text-red-500 hover:scale-110 transition-all duration-200 p-1"
-                          >
-                            <Heart
-                              size={16}
-                              className="sm:w-5 sm:h-5"
-                              fill={plan.likes?.includes(user.uid) ? 'red' : 'none'}
-                              stroke={plan.likes?.includes(user.uid) ? 'red' : 'currentColor'}
-                            />
-                            <span className="text-xs sm:text-sm font-medium">
-                              {plan.likes?.length || 0}
-                            </span>
-                          </button>
+                  <div className="flex items-center justify-between pt-3 sm:pt-4 border-t border-gray-100">
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      {/* Like */}
+                      <button
+                        onClick={async () => {
+                          const planRef = doc(db, 'planes', plan.id);
+                          const yaDioLike = plan.likes?.includes(user.uid);
+                          await updateDoc(planRef, {
+                            likes: yaDioLike
+                              ? arrayRemove(user.uid)
+                              : arrayUnion(user.uid),
+                          });
+                        }}
+                        className="flex items-center gap-1 text-red-500 hover:scale-110 transition-all duration-200 p-1"
+                      >
+                        <Heart
+                          size={16}
+                          className="sm:w-5 sm:h-5"
+                          fill={plan.likes?.includes(user.uid) ? 'red' : 'none'}
+                          stroke={plan.likes?.includes(user.uid) ? 'red' : 'currentColor'}
+                        />
+                        <span className="text-xs sm:text-sm font-medium">
+                          {plan.likes?.length || 0}
+                        </span>
+                      </button>
 
-                          {/* Participar */}
-                          <button
-                            onClick={async () => {
-                              const planRef = doc(db, 'planes', plan.id);
-                              const yaParticipa = plan.participants?.includes(user.uid);
-                              await updateDoc(planRef, {
-                                participants: yaParticipa
-                                  ? arrayRemove(user.uid)
-                                  : arrayUnion(user.uid),
-                              });
-                            }}
-                            className={`flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-2 rounded-full text-xs sm:text-sm font-medium transition-all duration-200 ${
-                              plan.participants?.includes(user.uid)
-                                ? 'bg-green-500 text-white shadow-lg'
-                                : 'bg-gray-100 text-gray-600 hover:bg-green-500 hover:text-white'
-                            }`}
-                          >
-                            <Check className="w-3 h-3 sm:w-4 sm:h-4" />
-                            <span>{plan.participants?.length || 0}</span>
-                          </button>
-                        </div>
+                      {/* Participar */}
+                      <button
+                        onClick={async () => {
+                          const planRef = doc(db, 'planes', plan.id);
+                          const yaParticipa = plan.participants?.includes(user.uid);
+                          await updateDoc(planRef, {
+                            participants: yaParticipa
+                              ? arrayRemove(user.uid)
+                              : arrayUnion(user.uid),
+                          });
+                        }}
+                        className={`flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-2 rounded-full text-xs sm:text-sm font-medium transition-all duration-200 ${
+                          plan.participants?.includes(user.uid)
+                            ? 'bg-green-500 text-white shadow-lg'
+                            : 'bg-gray-100 text-gray-600 hover:bg-green-500 hover:text-white'
+                        }`}
+                      >
+                        <Check className="w-3 h-3 sm:w-4 sm:h-4" />
+                        <span>{plan.participants?.length || 0}</span>
+                      </button>
+                    </div>
 
-                        {/* Compartir */}
-                        <button
-                          onClick={() =>
-                            navigator.share?.({
-                              title: plan.title,
-                              text: plan.description,
-                            }) || alert('Función de compartir no disponible')
-                          }
-                          className="flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs sm:text-sm rounded-full transition-colors duration-200"
-                        >
-                          <Share2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                          <span className="hidden sm:inline">Compartir</span>
-                          <span className="sm:hidden">Share</span>
-                        </button>
+                    {/* WhatsApp + Compartir */}
+                    <div className="flex items-center gap-2 sm:gap-3">
 
-                          
-                      </div>
+                       {/* WhatsApp contact */}
+                        {plan.enableWhatsapp && plan.phoneNumber && (
+                          <div className="mt-2">
+                            <a
+                              href={`https://wa.me/${plan.phoneNumber.replace(/\D/g, '')}?text=Hola! Vi tu plan "${plan.title}" en SindesParches y me interesa participar.`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                               className="flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-2 bg-green-500 hover:bg-green-600 text-white text-xs sm:text-sm rounded-full transition-colors duration-200"
+                      >
+                              <Phone className="w-3 h-3 sm:w-4 sm:h-4" />
+                              <span className="hidden xs:inline">WhatsApp</span>
+                              <span className="xs:hidden">WhatsApp</span>
+                            </a>
+                          </div>
+                        )}
+                      {/* Compartir */}
+                      <button
+                        onClick={() =>
+                          navigator.share?.({
+                            title: plan.title,
+                            text: plan.description,
+                            url: window.location.href,
+                          }) || alert('Función de compartir no disponible')
+                        }
+                        className="flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs sm:text-sm rounded-full transition-colors duration-200"
+                      >
+                        <Share2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                        <span className="hidden sm:inline">Compartir</span>
+                        <span className="sm:hidden">Share</span>
+                      </button>
+                    </div>
+                  </div>
 
-                      {/* Comentarios */}
-                      <div className="pt-2">
-                        <button
-                          onClick={() => abrirModalComentarios(plan)}
-                          className="flex items-center gap-2 text-xs sm:text-sm text-blue-600 hover:text-blue-800 hover:underline transition-colors"
-                        >
-                          <MessageCircle className="w-3 h-3 sm:w-4 sm:h-4" />
-                          <span className="hidden sm:inline">Ver comentarios</span>
-                          <span className="sm:hidden">Comentarios</span>
-                          <span className="bg-blue-100 text-blue-800 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium">
-                            {plan.commentCount || 0}
-                          </span>
-                        </button>
-                      </div>
+                  {/* Comentarios */}
+                  <div className="pt-2">
+                    <button
+                      onClick={() => abrirModalComentarios(plan)}
+                      className="flex items-center gap-2 text-xs sm:text-sm text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                    >
+                      <MessageCircle className="w-3 h-3 sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">Ver comentarios</span>
+                      <span className="sm:hidden">Comentarios</span>
+                      <span className="bg-blue-100 text-blue-800 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium">
+                        {plan.commentCount || 0}
+                      </span>
+                    </button>
+                  </div>
+
                     </div>
                   </div>
                 );
@@ -1129,7 +1120,7 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
                     </div>
                   )}
                 </div>
-
+ 
                 {/* Formulario para agregar comentario */}
                 <div className="border-t border-gray-200 p-4 sm:p-6 bg-gradient-to-r from-blue-50 to-purple-50">
                   <form
