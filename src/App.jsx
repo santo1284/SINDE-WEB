@@ -1,4 +1,3 @@
-// src/App.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import LoginScreen from './componentes/login.jsx';
 import CrearCuenta from './componentes/CrearCuenta.jsx';
@@ -45,7 +44,7 @@ function App() {
           verifyIntervalRef.current = null;
           setUser(auth.currentUser);
           setShowVerifyModal(false);
-          checkUserProfile(auth.currentUser);
+          setCurrentView('crearPerfil'); // 👈 ahora va a crear perfil al verificar
         }
       } catch (err) {
         console.warn('Error en verify polling:', err);
@@ -139,7 +138,7 @@ function App() {
   const showLogin = () => setCurrentView('login');
   const showPerfil = () => setCurrentView('crearPerfil');
   const showHome = () => setCurrentView('home');
-  const showVerPerfil = () => setCurrentView('perfil'); // 🔹 Nuevo
+  const showVerPerfil = () => setCurrentView('perfil');
 
   // 🔹 Pantalla de carga
   if (isLoading) {
@@ -166,7 +165,7 @@ function App() {
               setUser(auth.currentUser);
               setShowVerifyModal(false);
               stopVerifyPolling();
-              checkUserProfile(auth.currentUser);
+              setCurrentView('crearPerfil'); // 👈 aquí también forzamos a crear perfil
             }
           } catch (err) { console.warn('onVerifyCheck error:', err); }
         }}
@@ -176,10 +175,6 @@ function App() {
 
   return (
     <div className="App relative min-h-screen">
-      {/* 🔹 Logo animado */}
-  
-
-
       {/* 🔹 Vistas */}
       {currentView === 'login' && (
         <LoginScreen
@@ -189,22 +184,25 @@ function App() {
       )}
       {currentView === 'crearCuenta' && (
         <CrearCuenta
-          onCrearCuentaSuccess={handleLoginSuccess}
+          onCrearCuentaSuccess={() => {
+            setShowVerifyModal(true); // 👈 abre modal de verificación
+            setCurrentView('login');  // vuelve al login hasta verificar
+          }}
           onShowLogin={showLogin}
         />
       )}
       {currentView === 'crearPerfil' && (
         <CrearPerfil user={user} onPerfilCreado={showHome} />
       )}
-          {currentView === "home" && (
+      {currentView === "home" && (
         <Home 
           user={user} 
           onLogout={handleLogout} 
-          onShowPerfil={() => setCurrentView("perfil")}   // 👈 aquí
+          onShowPerfil={() => setCurrentView("perfil")}
         />
       )}
       {currentView === 'perfil' && (
-        <Perfil user={user} onBack={showHome} /> // 🔹 Nuevo
+        <Perfil user={user} onBack={showHome} />
       )}
     </div>
   );

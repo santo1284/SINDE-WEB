@@ -45,7 +45,7 @@ function CrearCuenta({ onCrearCuentaSuccess, onShowLogin }) {
         correo,
         nombre: nombre || "",
         aceptoTerminos: true,
-        fechaUnion: serverTimestamp(),
+        fechaRegistro: serverTimestamp(), // ✅ ahora se guarda con este nombre
       });
 
       // 🔹 Enviar correo de verificación

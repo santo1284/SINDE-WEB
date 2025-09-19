@@ -15,7 +15,8 @@ import {
   orderBy,
   limit, 
   getDocs,
-  setDoc 
+  setDoc ,
+  getDoc // <-- agregado
 } from 'firebase/firestore';
 import { db, storage, auth } from '../firebase/firebase-config';
 import {
@@ -114,6 +115,7 @@ const useGeolocation = () => {
 
 const Home = ({ user, onLogout, onShowPerfil }) => {
   const [planes, setPlanes] = useState([]);
+  const [perfilData, setPerfilData] = useState(null); // <-- nuevo estado
   const [busqueda, setBusqueda] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -188,6 +190,56 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
       console.error('Error al cerrar sesión:', error);
     }
   };
+
+// ─────────────────────────────────────────────────────────
+// Cargar datos del perfil desde Firestore (si existe)
+// ─────────────────────────────────────────────────────────
+useEffect(() => {
+  let mounted = true;
+  const fetchPerfil = async () => {
+    try {
+      if (!user?.uid) {
+        if (mounted) setPerfilData(null);
+        return;
+      }
+      const perfilRef = doc(db, "perfil", user.uid);
+      const perfilSnap = await getDoc(perfilRef);
+      if (mounted) {
+        if (perfilSnap && perfilSnap.exists()) {
+          setPerfilData(perfilSnap.data());
+        } else {
+          setPerfilData(null);
+        }
+      }
+    } catch (error) {
+      console.error("Error obteniendo perfil:", error);
+    }
+  };
+
+  fetchPerfil();
+
+  return () => {
+    mounted = false;
+  };
+}, [user?.uid]);
+
+// ─────────────────────────────────────────────────────────
+// Si no hay foto en Firestore, buscar en Storage
+// ─────────────────────────────────────────────────────────
+useEffect(() => {
+  const fetchFoto = async () => {
+    if (user?.uid && !perfilData?.fotoURL) {
+      try {
+        const fotoRef = ref(storage, `profile_pictures/${user.uid}`);
+        const url = await getDownloadURL(fotoRef);
+        setPerfilData((prev) => ({ ...prev, fotoURL: url }));
+      } catch (error) {
+        console.log("No se encontró foto en Storage:", error.message);
+      }
+    }
+  };
+  fetchFoto();
+}, [user?.uid, perfilData]);
 
   const formatDate = (dateValue) => {
     if (!dateValue) return 'No disponible';
@@ -625,30 +677,56 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
 
           {/* Información del usuario y acciones */}
           <div className="flex items-center gap-1 sm:gap-2 lg:gap-3">
-            {/* Info del usuario - Solo desktop */}
-            <div className="hidden xl:flex items-center gap-3 mr-4">
-              <div className="text-right min-w-0">
-                <p className="text-sm font-semibold truncate">
-                  {user?.displayName || user?.email?.split('@')[0] || 'Usuario'}
-                </p>
-                <p className="text-xs text-gray-300 truncate">
-                  {user?.email}
-                </p>
-              </div>
-              <div className="w-10 h-10 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                {(user?.displayName?.charAt(0) || user?.email?.charAt(0) || 'U').toUpperCase()}
-              </div>
-            </div>
+
+           {/* Info del usuario clickeable (reemplaza botón perfil) */}
+              <button
+                onClick={onShowPerfil}
+                className="hidden xl:flex items-center gap-3 mr-4 cursor-pointer hover:opacity-90 transition"
+              >
+                <div className="text-right min-w-0">
+                  <p className="text-sm font-semibold truncate">
+                    {perfilData?.nombre || user?.displayName || user?.email?.split('@')[0] || 'Usuario'}
+                  </p>
+                  <p className="text-xs text-gray-300 truncate">{user?.email}</p>
+                </div>
+
+                {/* Avatar del usuario */}
+                {perfilData?.fotoURL ? (
+                  <img
+                    src={perfilData.fotoURL}
+                    alt="Avatar"
+                    className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover flex-shrink-0"
+                  />
+                ) : (
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                    {(perfilData?.nombre?.charAt(0) ||
+                      user?.displayName?.charAt(0) ||
+                      user?.email?.charAt(0) ||
+                      'U').toUpperCase()}
+                  </div>
+                )}
+              </button>
 
             {/* Botones de acción */}
             <div className="flex gap-1 sm:gap-2 items-center">
               {/* Perfil - Oculto en móvil extra pequeño */}
               <button
+            
                 title="Mi Perfil"
                 className="bg-white/20 hover:bg-white/30 backdrop-blur-sm p-2 sm:p-2.5 lg:p-3 rounded-full transition-all duration-200 hover:scale-110 hidden xs:block"
                 onClick={onShowPerfil}
               >
                 <User className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+              </button>
+              {/* Notificaciones */}
+              <button
+                title="Notificaciones"
+                className="bg-white/20 hover:bg-white/30 backdrop-blur-sm p-2 sm:p-2.5 lg:p-3 rounded-full transition-all duration-200 hover:scale-110 relative"
+                onClick={() => setShowNotifications(!showNotifications)}
+              >
+                <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-red-500 rounded-full animate-pulse"></span>
+              
               </button>
 
               {/* Configuración */}
@@ -686,74 +764,108 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
         </div>
       </header>
 
-      {/* MENU DESPLEGABLE RESPONSIVO */}
-      {menuOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex justify-end" onClick={() => setMenuOpen(false)}>
-          <div 
-            className="bg-white w-72 sm:w-80 h-full shadow-2xl transform transition-transform duration-300 ease-out overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
+  {/* MENU DESPLEGABLE RESPONSIVO */}
+{menuOpen && (
+  <div
+    className="fixed inset-0 bg-black/50 z-50 flex justify-end"
+    onClick={() => setMenuOpen(false)}
+  >
+    <div
+      className="bg-white w-72 sm:w-80 h-full shadow-2xl transform transition-transform duration-300 ease-out overflow-y-auto"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="p-4 sm:p-6 border-b border-gray-200">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base sm:text-lg font-bold text-gray-900">
+            Mi Cuenta
+          </h3>
+          <button
+            onClick={() => setMenuOpen(false)}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
           >
-            <div className="p-4 sm:p-6 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base sm:text-lg font-bold text-gray-900">Mi Cuenta</h3>
-                <button
-                  onClick={() => setMenuOpen(false)}
-                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-                >
-                  <X className="w-5 h-5 text-gray-500" />
-                </button>
-              </div>
-              <div className="mt-4 flex items-center gap-3">
-                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                  {(user?.displayName?.charAt(0) || user?.email?.charAt(0) || 'U').toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-gray-900 text-sm sm:text-base truncate">
-                    {user?.displayName || user?.email?.split('@')[0] || 'Usuario'}
-                  </p>
-                  <p className="text-xs sm:text-sm text-gray-500 truncate">{user?.email}</p>
-                </div>
-              </div>
-            </div>
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
 
-            <div className="p-4 sm:p-6">
-              <nav className="space-y-3 sm:space-y-4">
-                <button
-                  onClick={onShowPerfil}
-                  className="w-full flex items-center gap-3 text-left p-3 hover:bg-gray-50 rounded-lg transition-colors"
-                >
-                  <User className="w-5 h-5 text-gray-500" />
-                  <span className="text-gray-700 text-sm sm:text-base">Mi Perfil</span>
-                </button>
-                
-                <button className="w-full flex items-center gap-3 text-left p-3 hover:bg-gray-50 rounded-lg transition-colors">
-                  <Bell className="w-5 h-5 text-gray-500" />
-                  <span className="text-gray-700 text-sm sm:text-base">Notificaciones</span>
-                </button>
-                
-                <button className="w-full flex items-center gap-3 text-left p-3 hover:bg-gray-50 rounded-lg transition-colors">
-                  <Settings className="w-5 h-5 text-gray-500" />
-                  <span className="text-gray-700 text-sm sm:text-base">Configuración</span>
-                </button>
-                
-                <div className="border-t border-gray-200 pt-4">
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-3 text-left p-3 hover:bg-red-50 rounded-lg transition-colors text-red-600 hover:text-red-700"
-                  >
-                    <LogOut className="w-5 h-5" />
-                    <span className="font-medium text-sm sm:text-base">Cerrar Sesión</span>
-                  </button>
-                </div>
-              </nav>
+        {/* Avatar + Nombre + Correo */}
+        <div className="mt-4 flex items-center gap-3">
+          {perfilData?.fotoURL ? (
+            <img
+              src={perfilData.fotoURL}
+              alt="Avatar"
+              className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover flex-shrink-0"
+            />
+          ) : (
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+              {(perfilData?.nombre?.charAt(0) ||
+                user?.displayName?.charAt(0) ||
+                user?.email?.charAt(0) ||
+                "U").toUpperCase()}
             </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-gray-900 text-sm sm:text-base truncate">
+              {perfilData?.nombre ||
+                user?.displayName ||
+                user?.email?.split("@")[0] ||
+                "Usuario"}
+            </p>
+            <p className="text-xs sm:text-sm text-gray-500 truncate">
+              {user?.email}
+            </p>
           </div>
         </div>
-      )}
+      </div>
+
+      {/* Opciones del menú */}
+      <div className="p-4 sm:p-6">
+        <nav className="space-y-3 sm:space-y-4">
+          <button
+            onClick={onShowPerfil}
+            className="w-full flex items-center gap-3 text-left p-3 hover:bg-gray-50 rounded-lg transition-colors"
+          >
+            <User className="w-5 h-5 text-gray-500" />
+            <span className="text-gray-700 text-sm sm:text-base">
+              Mi Perfil
+            </span>
+          </button>
+
+          <button className="w-full flex items-center gap-3 text-left p-3 hover:bg-gray-50 rounded-lg transition-colors">
+            <Bell className="w-5 h-5 text-gray-500" />
+            <span className="text-gray-700 text-sm sm:text-base">
+              Notificaciones
+            </span>
+          </button>
+
+          <button className="w-full flex items-center gap-3 text-left p-3 hover:bg-gray-50 rounded-lg transition-colors">
+            <Settings className="w-5 h-5 text-gray-500" />
+            <span className="text-gray-700 text-sm sm:text-base">
+              Configuración
+            </span>
+          </button>
+
+          <div className="border-t border-gray-200 pt-4">
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 text-left p-3 hover:bg-red-50 rounded-lg transition-colors text-red-600 hover:text-red-700"
+            >
+              <LogOut className="w-5 h-5" />
+              <span className="font-medium text-sm sm:text-base">
+                Cerrar Sesión
+              </span>
+            </button>
+          </div>
+        </nav>
+      </div>
+    </div>
+  </div>
+)}
+
 
       <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8">
 
         {/* Botón crear plan mejorado y responsivo - CORREGIDO */}
+        {/* Botón crear plan mejorado y responsivo (el resto de tu main lo mantuve intacto) */}
         <div className="text-center mb-8 sm:mb-10 lg:mb-12">
           <div className="relative">
             <div>
@@ -764,7 +876,7 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
                 <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -skew-x-12 transform translate-x-full group-hover:translate-x-[-200%] transition-transform duration-1000"></div>
                 <Plus className="w-5 h-5 sm:w-6 sm:h-6" />
                 <span className="hidden sm:inline">¡Crear Plan Increíble!</span>
-                <span className="sm:hidden">Crear Plan</span>
+                <span className="sm:hidden">Crear el mejor plan Plan</span>
                 <span className="text-xl sm:text-2xl">✨</span>
               </button>
 
@@ -779,6 +891,7 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
           </div>
         </div>
 
+       
         <section className="mt-8 sm:mt-10 lg:mt-12">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 sm:mb-8 gap-4">
             <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-white flex items-center gap-2 sm:gap-3">
@@ -819,7 +932,7 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
                 className="bg-gradient-to-r from-pink-500 to-purple-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-full font-semibold hover:scale-105 transition-transform text-sm sm:text-base"
               >
                 <span className="hidden sm:inline">Crear el Primer Plan 🚀</span>
-                <span className="sm:hidden">Crear Plan 🚀</span>
+                <span className="sm:hidden">Crear el mejor Plan 🚀</span>
               </button>
             </div>
           ) : (
@@ -868,7 +981,7 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
                       </div>
                     )}
 
-                    {/* Contenido del plan */}
+                    {/* Contenido del plan detallado */}
                     <div className="space-y-3 sm:space-y-4">
                       <h3 className="text-lg sm:text-xl font-bold text-gray-900 group-hover:text-purple-600 transition-colors line-clamp-2">
                         {plan.title}
