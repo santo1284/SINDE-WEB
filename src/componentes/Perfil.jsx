@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { auth, db } from "../firebase/firebase-config";
+import { auth, db, storage } from "../firebase/firebase-config";
 import { doc, getDoc, updateDoc, collection, getDocs } from "firebase/firestore";
+import { ref, getDownloadURL } from "firebase/storage";
 import EditarPerfilModal from "./EditarPerfil";
 import { useNavigate } from "react-router-dom";
 
@@ -10,31 +11,88 @@ function Perfil({ onBack }) {
   const [flashPlans, setFlashPlans] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
   const [activeTab, setActiveTab] = useState("info");
+  const [imageUrl, setImageUrl] = useState(null);
+  const [imageLoading, setImageLoading] = useState(true);
 
   const user = auth.currentUser;
 
   useEffect(() => {
     const fetchPerfil = async () => {
       if (user) {
-        const perfilRef = doc(db, "perfil", user.uid);
-        const perfilSnap = await getDoc(perfilRef);
-        if (perfilSnap.exists()) {
-          setPerfilData(perfilSnap.data());
+        try {
+          // 1. Obtener datos del perfil desde Firestore
+          const perfilRef = doc(db, "perfil", user.uid);
+          const perfilSnap = await getDoc(perfilRef);
+          if (perfilSnap.exists()) {
+            setPerfilData(perfilSnap.data());
+          }
+
+          // 2. Obtener imagen desde Storage (como hace la móvil)
+          try {
+            const storageRef = ref(storage, `profile_pictures/${user.uid}`);
+            const url = await getDownloadURL(storageRef);
+            setImageUrl(url);
+          } catch (storageErr) {
+            console.log("⚠️ No hay imagen en Storage:", storageErr?.code || storageErr?.message);
+            setImageUrl(null);
+          }
+
+          // 3. Obtener planes del usuario
+          const planesRef = collection(db, "planes", user.uid, "misPlanes");
+          const planesSnap = await getDocs(planesRef);
+          setPlanes(planesSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+
+          // 4. Obtener flashplans del usuario
+          const flashRef = collection(db, "flashPlans", user.uid, "misFlash");
+          const flashSnap = await getDocs(flashRef);
+          setFlashPlans(
+            flashSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+          );
+        } catch (error) {
+          console.error("Error cargando perfil:", error);
+        } finally {
+          setImageLoading(false);
         }
-
-        const planesRef = collection(db, "planes", user.uid, "misPlanes");
-        const planesSnap = await getDocs(planesRef);
-        setPlanes(planesSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-
-        const flashRef = collection(db, "flashPlans", user.uid, "misFlash");
-        const flashSnap = await getDocs(flashRef);
-        setFlashPlans(
-          flashSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-        );
       }
     };
     fetchPerfil();
   }, [user]);
+
+  // Función para mostrar inicial del usuario (como en móvil)
+  const mostrarInicial = () => {
+    return (perfilData?.nombre?.charAt(0) ||
+            user?.displayName?.charAt(0) ||
+            user?.email?.charAt(0) ||
+            "U").toUpperCase();
+  };
+
+  // Función para formatear fecha (compatible con móvil)
+  const formatearFecha = () => {
+    const fechaData = perfilData?.fechaAceptacionTerminos || 
+                     perfilData?.fechaRegistro || 
+                     perfilData?.createdAt || 
+                     perfilData?.timestamp;
+
+    if (!fechaData) return "No disponible";
+
+    try {
+      let fecha;
+      if (typeof fechaData === 'string') {
+        fecha = new Date(fechaData);
+      } else if (fechaData.seconds) {
+        fecha = new Date(fechaData.seconds * 1000);
+      } else {
+        fecha = new Date(fechaData);
+      }
+
+      return fecha.toLocaleDateString("es-CO", {
+        year: "numeric",
+        month: "long",
+      });
+    } catch (error) {
+      return "No disponible";
+    }
+  };
 
   if (!perfilData) {
     return (
@@ -80,13 +138,23 @@ function Perfil({ onBack }) {
             <div className="h-48 bg-gradient-to-r from-pink-600 via-indigo-600 to-purple-600 relative overflow-hidden">
               <div className="absolute inset-0 bg-black/10"></div>
               <div className="relative h-full flex flex-col items-center justify-center text-white px-8">
-                {/* Foto */}
+                {/* Foto - Compatible con móvil */}
                 <div className="relative mb-4">
-                  <img
-                    src={perfilData.fotoURL || "https://via.placeholder.com/150"}
-                    alt="Foto perfil"
-                    className="w-24 h-24 rounded-2xl border-4 border-white shadow-xl object-cover"
-                  />
+                  <div className="w-24 h-24 rounded-2xl border-4 border-white shadow-xl overflow-hidden bg-gray-100 flex items-center justify-center">
+                    {imageLoading ? (
+                      <div className="animate-pulse text-gray-300 text-sm">...</div>
+                    ) : imageUrl ? (
+                      <img
+                        src={imageUrl}
+                        alt="Foto perfil"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white">
+                        {mostrarInicial()}
+                      </div>
+                    )}
+                  </div>
                   <div className="absolute -bottom-1 -right-1 bg-green-500 w-6 h-6 rounded-full border-3 border-white flex items-center justify-center">
                     <div className="w-2 h-2 bg-white rounded-full"></div>
                   </div>
@@ -107,24 +175,12 @@ function Perfil({ onBack }) {
                       d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                     />
                   </svg>
-                  Miembro desde{" "}
-                  {perfilData.fechaRegistro ||
-                  perfilData.createdAt ||
-                  perfilData.fechaTerminos
-                    ? new Date(
-                        (perfilData.fechaRegistro ||
-                          perfilData.createdAt ||
-                          perfilData.fechaTerminos).seconds * 1000
-                      ).toLocaleDateString("es-CO", {
-                        year: "numeric",
-                        month: "long",
-                      })
-                    : "No disponible"}
+                  Miembro desde {formatearFecha()}
                 </p>
               </div>
             </div>
 
-            {/* Stats (se mantienen igual, no los toqué) */}
+            {/* Stats */}
             <div className="relative px-8 py-6 bg-white">
               <div className="flex justify-center">
                 <div className="flex gap-6">
@@ -167,17 +223,12 @@ function Perfil({ onBack }) {
             </div>
           </div>
 
-          {/* ---------------------------
-              AQUÍ: quité los "botones morados" con íconos pero 
-              dejé el contenedor y el botón editar tal como estaba,
-              para no romper posicionamiento ni diseño.
-             --------------------------- */}
           <div className="px-8 border-b border-gray-200 bg-white relative">
             <div className="flex gap-1">
-              {/* botones morados (con iconos) removidos a pedido */}
+              {/* botones morados removidos */}
             </div>
 
-            {/* Editar perfil (se mantiene) */}
+            {/* Editar perfil */}
             <div className="absolute top-4 right-8">
               <button
                 onClick={() => setIsEditing(true)}
@@ -200,7 +251,7 @@ function Perfil({ onBack }) {
             </div>
           </div>
 
-          {/* Barra de pestañas nueva (centrada) - se mantiene */}
+          {/* Barra de pestañas */}
           <div className="flex justify-center space-x-4 mb-8">
             {[
               { key: "info", label: "Información" },
@@ -249,6 +300,16 @@ function Perfil({ onBack }) {
                       icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
                       label: "Edad",
                       value: `${perfilData.edad} años`,
+                    },
+                    {
+                      icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
+                      label: "Términos Aceptados",
+                      value: perfilData.terminosAceptados ? "Sí" : "No",
+                    },
+                    {
+                      icon: "M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207",
+                      label: "Correo",
+                      value: perfilData.email || user?.email,
                     },
                   ].map((item, index) => (
                     <div
