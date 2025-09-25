@@ -1,524 +1,639 @@
 import React, { useEffect, useState } from "react";
 import { auth, db, storage } from "../firebase/firebase-config";
-import { doc, getDoc, updateDoc, collection, getDocs } from "firebase/firestore";
+import {
+doc,
+getDoc,
+updateDoc,
+collection,
+getDocs,
+query,
+where,
+onSnapshot,
+} from "firebase/firestore";
 import { ref, getDownloadURL } from "firebase/storage";
 import EditarPerfilModal from "./EditarPerfil";
-import { useNavigate } from "react-router-dom";
-
+import PlanModal from "./PlanModal";
+import PlanDetailsModal from "./PlanDetailsModal";
+import { onAuthStateChanged } from "firebase/auth";
+import { User, Phone, MapPin, Calendar, Mail, Check, Edit } from "lucide-react";
 function Perfil({ onBack }) {
-  const [perfilData, setPerfilData] = useState(null);
-  const [planes, setPlanes] = useState([]);
-  const [flashPlans, setFlashPlans] = useState([]);
-  const [isEditing, setIsEditing] = useState(false);
-  const [activeTab, setActiveTab] = useState("info");
-  const [imageUrl, setImageUrl] = useState(null);
-  const [imageLoading, setImageLoading] = useState(true);
+const [perfilData, setPerfilData] = useState(null);
+const [planes, setPlanes] = useState([]);
+const [flashPlans, setFlashPlans] = useState([]);
+const [isEditing, setIsEditing] = useState(false);
+const [activeTab, setActiveTab] = useState("info");
+const [imageUrl, setImageUrl] = useState(null);
+const [imageLoading, setImageLoading] = useState(true);
+const [modalCrearPlan, setModalCrearPlan] = useState(false);
+const [user, setUser] = useState(null);
+const [selectedPlan, setSelectedPlan] = useState(null);
+const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+// Función para cargar perfil
+const fetchPerfil = async (currentUser) => {
+try {
+const perfilRef = doc(db, "perfil", currentUser.uid);
+const perfilSnap = await getDoc(perfilRef);
+if (perfilSnap.exists()) {
+setPerfilData(perfilSnap.data());
+}
+  // Imagen de perfil
+  try {
+    const storageRef = ref(storage, `profile_pictures/${currentUser.uid}`);
+    const url = await getDownloadURL(storageRef);
+    setImageUrl(url);
+  } catch (storageErr) {
+    console.log("No hay imagen en Storage:", storageErr?.code || storageErr?.message);
+    setImageUrl(null);
+  }
+} catch (error) {
+  console.error("Error cargando perfil:", error);
+} finally {
+  setImageLoading(false);
+}
+};
+// Función para cargar flashPlans
+const fetchFlashPlans = async (currentUser) => {
+try {
+const q = query(
+collection(db, "flashPlans"),
+where("userId", "==", currentUser.uid)
+);
+const flashSnap = await getDocs(q);
+setFlashPlans(flashSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+} catch (error) {
+console.error("Error cargando flashPlans:", error);
+}
+};
+// Escuchar planes en tiempo real
+const listenPlanes = (currentUser) => {
+const q = query(collection(db, "planes"), where("userId", "==", currentUser.uid));
+return onSnapshot(q, (snapshot) => {
+const planesData = snapshot.docs.map((doc) => ({
+id: doc.id,
+...doc.data(),
+}));
+setPlanes(planesData);
+});
+};
+// useEffect con onAuthStateChanged
+useEffect(() => {
+const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+if (currentUser) {
+setUser(currentUser);
+fetchPerfil(currentUser);
+fetchFlashPlans(currentUser);
+listenPlanes(currentUser);
+} else {
+setUser(null);
+setPerfilData(null);
+setPlanes([]);
+setFlashPlans([]);
+}
+});
+return () => unsubscribe();
+}, []);
+const mostrarInicial = () => {
+return (
+perfilData?.nombre?.charAt(0) ||
+user?.displayName?.charAt(0) ||
+user?.email?.charAt(0) ||
+"U"
+).toUpperCase();
+};
+const formatearFecha = () => {
+const fechaData =
+perfilData?.fechaAceptacionTerminos ||
+perfilData?.fechaRegistro ||
+perfilData?.createdAt ||
+perfilData?.timestamp;
+if (!fechaData) return "No disponible";
+try {
+  let fecha;
+  if (typeof fechaData === "string") {
+    fecha = new Date(fechaData);
+  } else if (fechaData.seconds) {
+    fecha = new Date(fechaData.seconds * 1000);
+  } else {
+    fecha = new Date(fechaData);
+  }
+  return fecha.toLocaleDateString("es-CO", {
+    year: "numeric",
+    month: "long",
+  });
+} catch (error) {
+  return "No disponible";
+}
+};
+// Función para formatear fecha de planes
+const formatearFechaPlan = (date) => {
+if (!date) return 'Sin fecha';
+try {
+  let dateObj;
+  if (typeof date === 'number') {
+    dateObj = new Date(date);
+  } else if (date.toDate) {
+    dateObj = date.toDate();
+  } else if (date.seconds) {
+    dateObj = new Date(date.seconds * 1000);
+  } else {
+    dateObj = new Date(date);
+  }
+  
+  return dateObj.toLocaleDateString('es-ES', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+} catch (error) {
+  console.error('Error formateando fecha:', error);
+  return 'Fecha inválida';
+}
+};
+// Si no hay perfil cargado todavía
+if (!perfilData) {
+return (
+<div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-pink-900 flex items-center justify-center">
+<div className="bg-white/10 backdrop-blur-xl rounded-3xl p-12 text-white text-center border border-white/20">
+<div className="animate-spin w-16 h-16 border-4 border-white/30 border-t-white rounded-full mx-auto mb-6"></div>
+<p className="text-xl font-medium">Cargando perfil...</p>
+</div>
+</div>
+);
+}
+// JSX del perfil con diseño mejorado y animaciones de fondo
+return (
+<div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-pink-900 relative overflow-hidden">
+  {/* Animaciones de fondo dinámicas */}
+  <div className="absolute inset-0 overflow-hidden pointer-events-none">
+    {/* Círculos flotantes grandes */}
+    <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
+    <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-pink-500/20 rounded-full blur-3xl animate-pulse" style={{animationDelay: '1s'}}></div>
+    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl animate-pulse" style={{animationDelay: '2s'}}></div>
+    
+    {/* Orbes flotantes medianos */}
+    <div className="absolute top-20 left-20 w-32 h-32 bg-cyan-400/30 rounded-full blur-2xl animate-bounce" style={{animationDuration: '6s', animationDelay: '0.5s'}}></div>
+    <div className="absolute top-1/3 right-32 w-24 h-24 bg-yellow-400/25 rounded-full blur-xl animate-bounce" style={{animationDuration: '8s', animationDelay: '1.5s'}}></div>
+    <div className="absolute bottom-32 left-1/3 w-20 h-20 bg-green-400/30 rounded-full blur-xl animate-bounce" style={{animationDuration: '7s', animationDelay: '3s'}}></div>
+    <div className="absolute top-1/4 left-1/2 w-16 h-16 bg-pink-400/40 rounded-full blur-lg animate-bounce" style={{animationDuration: '9s', animationDelay: '2.5s'}}></div>
+    
+    {/* Partículas pequeñas flotantes */}
+    <div className="absolute top-1/6 right-1/4 w-3 h-3 bg-white/60 rounded-full animate-ping" style={{animationDuration: '4s'}}></div>
+    <div className="absolute top-2/3 left-1/6 w-2 h-2 bg-purple-300/70 rounded-full animate-ping" style={{animationDuration: '5s', animationDelay: '1s'}}></div>
+    <div className="absolute bottom-1/4 right-1/3 w-4 h-4 bg-pink-300/50 rounded-full animate-ping" style={{animationDuration: '6s', animationDelay: '2s'}}></div>
+    <div className="absolute top-1/2 right-1/6 w-2 h-2 bg-cyan-300/80 rounded-full animate-ping" style={{animationDuration: '3s', animationDelay: '0.5s'}}></div>
+    <div className="absolute bottom-1/3 left-1/2 w-3 h-3 bg-yellow-300/60 rounded-full animate-ping" style={{animationDuration: '7s', animationDelay: '3.5s'}}></div>
+    
+    {/* Estrellas titilantes */}
+    <div className="absolute top-1/5 left-1/4 w-1 h-1 bg-white rounded-full animate-pulse opacity-70"></div>
+    <div className="absolute top-1/3 right-1/5 w-1 h-1 bg-white rounded-full animate-pulse opacity-50" style={{animationDelay: '1s'}}></div>
+    <div className="absolute bottom-1/5 left-2/3 w-1 h-1 bg-white rounded-full animate-pulse opacity-80" style={{animationDelay: '2s'}}></div>
+    <div className="absolute top-2/3 left-1/5 w-1 h-1 bg-white rounded-full animate-pulse opacity-60" style={{animationDelay: '0.5s'}}></div>
+    <div className="absolute bottom-1/2 right-1/4 w-1 h-1 bg-white rounded-full animate-pulse opacity-90" style={{animationDelay: '1.5s'}}></div>
+    <div className="absolute top-1/4 left-3/4 w-1 h-1 bg-white rounded-full animate-pulse opacity-40" style={{animationDelay: '3s'}}></div>
+    
+    {/* Ondas concéntricas */}
+    <div className="absolute top-1/4 right-1/3 w-40 h-40 border border-white/10 rounded-full animate-ping" style={{animationDuration: '8s'}}></div>
+    <div className="absolute bottom-1/3 left-1/4 w-32 h-32 border border-purple-300/20 rounded-full animate-ping" style={{animationDuration: '10s', animationDelay: '2s'}}></div>
+    
+    {/* Figuras geométricas flotantes */}
+    <div className="absolute top-1/6 left-1/3 w-6 h-6 bg-gradient-to-br from-purple-400/30 to-pink-400/30 transform rotate-45 animate-spin" style={{animationDuration: '20s'}}></div>
+    <div className="absolute bottom-1/4 right-1/6 w-4 h-4 bg-gradient-to-br from-cyan-400/40 to-blue-400/40 transform rotate-12 animate-spin" style={{animationDuration: '15s', animationDelay: '5s'}}></div>
+    <div className="absolute top-2/3 left-2/3 w-5 h-5 bg-gradient-to-br from-yellow-400/35 to-orange-400/35 transform -rotate-12 animate-spin" style={{animationDuration: '25s', animationDelay: '3s'}}></div>
+    
+    {/* Líneas de conexión animadas */}
+    <div className="absolute top-1/3 left-1/2 w-px h-20 bg-gradient-to-b from-transparent via-white/20 to-transparent animate-pulse" style={{animationDelay: '1s'}}></div>
+    <div className="absolute top-1/2 left-1/3 w-16 h-px bg-gradient-to-r from-transparent via-purple-300/30 to-transparent animate-pulse" style={{animationDelay: '2.5s'}}></div>
+    
+    {/* Efecto de partículas deslizantes */}
+    <div className="absolute inset-0">
+      <div className="absolute top-1/4 -left-2 w-1 h-1 bg-white/70 rounded-full animate-pulse"></div>
+      <div className="absolute top-1/3 -left-2 w-0.5 h-0.5 bg-purple-300/60 rounded-full animate-pulse" style={{animationDelay: '1s'}}></div>
+      <div className="absolute top-1/2 -left-2 w-1 h-1 bg-pink-300/50 rounded-full animate-pulse" style={{animationDelay: '2s'}}></div>
+      <div className="absolute top-2/3 -left-2 w-0.5 h-0.5 bg-cyan-300/70 rounded-full animate-pulse" style={{animationDelay: '3s'}}></div>
+    </div>
+  </div>
 
-  const user = auth.currentUser;
+  {/* Efecto de lluvia de estrellas sutil */}
+  <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-30">
+    {[...Array(12)].map((_, i) => (
+      <div
+        key={i}
+        className="absolute w-0.5 h-0.5 bg-white rounded-full animate-bounce"
+        style={{
+          left: `${Math.random() * 100}%`,
+          top: `${Math.random() * 100}%`,
+          animationDuration: `${3 + Math.random() * 4}s`,
+          animationDelay: `${Math.random() * 3}s`
+        }}
+      ></div>
+    ))}
+  </div>
 
-  useEffect(() => {
-    const fetchPerfil = async () => {
-      if (user) {
-        try {
-          // 1. Obtener datos del perfil desde Firestore
-          const perfilRef = doc(db, "perfil", user.uid);
-          const perfilSnap = await getDoc(perfilRef);
-          if (perfilSnap.exists()) {
-            setPerfilData(perfilSnap.data());
-          }
+  <div className="relative z-10 max-w-6xl mx-auto px-4 lg:px-6 py-6">
 
-          // 2. Obtener imagen desde Storage (como hace la móvil)
-          try {
-            const storageRef = ref(storage, `profile_pictures/${user.uid}`);
-            const url = await getDownloadURL(storageRef);
-            setImageUrl(url);
-          } catch (storageErr) {
-            console.log("⚠️ No hay imagen en Storage:", storageErr?.code || storageErr?.message);
-            setImageUrl(null);
-          }
+    {/* Botón volver mejorado */}
+    <div className="mb-8">
+      <button
+        onClick={onBack}
+        className="group bg-white/10 backdrop-blur-xl border border-white/20 text-white px-6 py-3 rounded-2xl shadow-xl hover:bg-white/20 transition-all duration-300 flex items-center gap-3 font-medium hover:scale-105"
+      >
+        <svg className="w-5 h-5 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+        Volver al inicio
+      </button>
+    </div>
 
-          // 3. Obtener planes del usuario
-          const planesRef = collection(db, "planes", user.uid, "misPlanes");
-          const planesSnap = await getDocs(planesRef);
-          setPlanes(planesSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    {/* Header principal con diseño curvo */}
+    <div className="relative mb-8">
+      <div className="bg-gradient-to-br from-purple-600 via-indigo-600 to-pink-600 rounded-t-[3rem] px-8 py-12 relative overflow-hidden">
+        
+        {/* Patrón decorativo */}
+        <div className="absolute inset-0 bg-gradient-to-r from-white/5 to-transparent"></div>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-32 translate-x-32"></div>
+        
+        {/* Botón editar flotante */}
+        <button
+          onClick={() => setIsEditing(true)}
+          className="absolute top-6 right-6 bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white p-3 rounded-2xl transition-all duration-300 hover:scale-110 border border-white/20"
+        >
+          <Edit className="w-5 h-5" />
+        </button>
 
-          // 4. Obtener flashplans del usuario
-          const flashRef = collection(db, "flashPlans", user.uid, "misFlash");
-          const flashSnap = await getDocs(flashRef);
-          setFlashPlans(
-            flashSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-          );
-        } catch (error) {
-          console.error("Error cargando perfil:", error);
-        } finally {
-          setImageLoading(false);
-        }
-      }
-    };
-    fetchPerfil();
-  }, [user]);
+        {/* Contenido del header */}
+        <div className="relative flex flex-col items-center text-white text-center">
+          
+          {/* Foto de perfil mejorada */}
+          <div className="relative mb-6">
+            <div className="w-32 h-32 rounded-full border-4 border-white/30 shadow-2xl overflow-hidden bg-white/10 backdrop-blur-sm">
+              {imageLoading ? (
+                <div className="w-full h-full flex items-center justify-center">
+                  <div className="animate-pulse text-white/50 text-lg">...</div>
+                </div>
+              ) : imageUrl ? (
+                <img src={imageUrl} alt="Foto perfil" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-3xl font-bold text-white">
+                  {mostrarInicial()}
+                </div>
+              )}
+            </div>
+            
+            {/* Badge online */}
+            <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-green-500 rounded-full border-4 border-white/30 flex items-center justify-center">
+              <div className="w-3 h-3 bg-green-300 rounded-full animate-pulse"></div>
+            </div>
+          </div>
 
-  // Función para mostrar inicial del usuario (como en móvil)
-  const mostrarInicial = () => {
-    return (perfilData?.nombre?.charAt(0) ||
-            user?.displayName?.charAt(0) ||
-            user?.email?.charAt(0) ||
-            "U").toUpperCase();
-  };
-
-  // Función para formatear fecha (compatible con móvil)
-  const formatearFecha = () => {
-    const fechaData = perfilData?.fechaAceptacionTerminos || 
-                     perfilData?.fechaRegistro || 
-                     perfilData?.createdAt || 
-                     perfilData?.timestamp;
-
-    if (!fechaData) return "No disponible";
-
-    try {
-      let fecha;
-      if (typeof fechaData === 'string') {
-        fecha = new Date(fechaData);
-      } else if (fechaData.seconds) {
-        fecha = new Date(fechaData.seconds * 1000);
-      } else {
-        fecha = new Date(fechaData);
-      }
-
-      return fecha.toLocaleDateString("es-CO", {
-        year: "numeric",
-        month: "long",
-      });
-    } catch (error) {
-      return "No disponible";
-    }
-  };
-
-  if (!perfilData) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-700 via-indigo-700 to-pink-700 flex items-center justify-center">
-        <div className="bg-white/20 backdrop-blur-lg rounded-2xl p-8 text-white text-center">
-          <div className="animate-spin w-12 h-12 border-4 border-white/30 border-t-white rounded-full mx-auto mb-4"></div>
-          <p className="text-lg">Cargando perfil...</p>
+          {/* Información del usuario */}
+          <h1 className="text-3xl font-bold mb-2 tracking-tight">
+            {perfilData.nombre}
+          </h1>
+          
+          <div className="flex items-center gap-2 text-white/90 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full border border-white/20">
+            <Calendar className="w-4 h-4" />
+            <span className="text-sm font-medium">
+              Miembro desde {formatearFecha()}
+            </span>
+          </div>
         </div>
       </div>
-    );
-  }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-700 via-indigo-700 to-pink-700 p-4 lg:p-6">
-      <div className="max-w-6xl mx-auto">
-        {/* Botón volver */}
-        <div className="mb-6">
-          <button
-            onClick={onBack}
-            className="bg-white/20 backdrop-blur-md text-white px-6 py-3 rounded-xl shadow-lg hover:bg-white/30 transition-all duration-300 flex items-center gap-2 font-medium"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-            Volver
-          </button>
+      {/* Tabs mejorados */}
+      <div className="bg-white/95 backdrop-blur-xl border-x border-white/20 px-8 py-6">
+        <div className="flex justify-center">
+          <div className="flex bg-gray-100 rounded-2xl p-2 gap-2">
+            {[
+              { key: "info", label: "Información", icon: User },
+              { key: "planes", label: "Mis Planes", icon: Calendar },
+              { key: "flashplans", label: "FlashPlans", icon: MapPin },
+            ].map((tab) => {
+              const IconComponent = tab.icon;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
+                    activeTab === tab.key
+                      ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg scale-105"
+                      : "text-gray-600 hover:bg-white hover:text-purple-600"
+                  }`}
+                >
+                  <IconComponent className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
+      </div>
 
-        {/* Tarjeta principal del perfil */}
-        <div className="bg-white/90 backdrop-blur-lg shadow-2xl rounded-3xl overflow-hidden">
-          {/* Header del perfil */}
-          <div className="relative">
-            <div className="h-48 bg-gradient-to-r from-pink-600 via-indigo-600 to-purple-600 relative overflow-hidden">
-              <div className="absolute inset-0 bg-black/10"></div>
-              <div className="relative h-full flex flex-col items-center justify-center text-white px-8">
-                {/* Foto - Compatible con móvil */}
-                <div className="relative mb-4">
-                  <div className="w-24 h-24 rounded-2xl border-4 border-white shadow-xl overflow-hidden bg-gray-100 flex items-center justify-center">
-                    {imageLoading ? (
-                      <div className="animate-pulse text-gray-300 text-sm">...</div>
-                    ) : imageUrl ? (
-                      <img
-                        src={imageUrl}
-                        alt="Foto perfil"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white">
-                        {mostrarInicial()}
+      {/* Contenido con fondo blanco y bordes redondeados */}
+      <div className="bg-white/95 backdrop-blur-xl rounded-b-[3rem] border-x border-b border-white/20 p-8">
+        
+        {/* TAB INFORMACIÓN */}
+        {activeTab === "info" && (
+          <div className="space-y-8">
+            <h2 className="text-3xl font-bold text-gray-800 text-center mb-12">
+              Información Personal
+            </h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {[
+                { 
+                  icon: User, 
+                  label: "Nombre", 
+                  value: perfilData.nombre,
+                  gradient: "from-blue-500 to-purple-600",
+                  bgGradient: "from-blue-50 to-purple-50"
+                },
+                { 
+                  icon: Phone, 
+                  label: "Celular", 
+                  value: perfilData.celular,
+                  gradient: "from-green-500 to-emerald-600",
+                  bgGradient: "from-green-50 to-emerald-50"
+                },
+                { 
+                  icon: MapPin, 
+                  label: "Ciudad", 
+                  value: perfilData.ciudad,
+                  gradient: "from-pink-500 to-rose-600",
+                  bgGradient: "from-pink-50 to-rose-50"
+                },
+                { 
+                  icon: Calendar, 
+                  label: "Edad", 
+                  value: `${perfilData.edad} años`,
+                  gradient: "from-purple-500 to-indigo-600",
+                  bgGradient: "from-purple-50 to-indigo-50"
+                },
+                { 
+                  icon: Check, 
+                  label: "Términos Aceptados", 
+                  value: perfilData.terminosAceptados ? "Sí" : "No",
+                  gradient: "from-emerald-500 to-green-600",
+                  bgGradient: "from-emerald-50 to-green-50"
+                },
+                { 
+                  icon: Mail, 
+                  label: "Correo", 
+                  value: perfilData.email || user?.email,
+                  gradient: "from-orange-500 to-amber-600",
+                  bgGradient: "from-orange-50 to-amber-50"
+                },
+              ].map((item, index) => {
+                const IconComponent = item.icon;
+                return (
+                  <div 
+                    key={index} 
+                    className={`bg-gradient-to-br ${item.bgGradient} rounded-2xl p-6 border border-white/60 hover:shadow-xl transition-all duration-300 hover:scale-105 group`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`bg-gradient-to-br ${item.gradient} p-4 rounded-2xl shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+                        <IconComponent className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-gray-600 mb-1">{item.label}</p>
+                        <p className="text-lg font-bold text-gray-800">{item.value || "No especificado"}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* TAB PLANES */}
+        {activeTab === "planes" && (
+          <div>
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-3xl font-bold text-gray-800">
+                Mis Planes
+              </h2>
+              <span className="bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700 px-4 py-2 rounded-full text-sm font-bold border border-purple-200">
+                {planes.length} planes creados
+              </span>
+            </div>
+
+            {/* Si tiene planes */}
+            {planes.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {planes.map((plan) => (
+                  <div
+                    key={plan.id}
+                    onClick={() => {
+                      setSelectedPlan(plan);
+                      setIsPlanModalOpen(true);
+                    }}
+                    className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden cursor-pointer hover:shadow-2xl transition-all duration-300 hover:scale-105 group"
+                  >
+                    {/* Imagen principal del plan */}
+                    {plan.imageUrls && plan.imageUrls.length > 0 && (
+                      <div className="relative w-full h-48 overflow-hidden">
+                        <img
+                          src={plan.imageUrls[0]}
+                          alt={plan.title}
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
                       </div>
                     )}
-                  </div>
-                  <div className="absolute -bottom-1 -right-1 bg-green-500 w-6 h-6 rounded-full border-3 border-white flex items-center justify-center">
-                    <div className="w-2 h-2 bg-white rounded-full"></div>
-                  </div>
-                </div>
-                {/* Nombre y fecha */}
-                <h1 className="text-2xl font-bold mb-1">{perfilData.nombre}</h1>
-                <p className="text-white/90 flex items-center gap-2 text-sm">
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                    />
-                  </svg>
-                  Miembro desde {formatearFecha()}
-                </p>
-              </div>
-            </div>
 
-            {/* Stats */}
-            <div className="relative px-8 py-6 bg-white">
-              <div className="flex justify-center">
-                <div className="flex gap-6">
-                  <div className="text-center bg-purple-200 rounded-xl p-4 min-w-[100px]">
-                    <div className="text-2xl font-bold text-purple-600">
-                      {planes.length}
-                    </div>
-                    <div className="text-sm text-gray-600">Planes</div>
-                  </div>
-                  <div className="text-center bg-pink-200 rounded-xl p-4 min-w-[100px] flex flex-col items-center">
-                    <div className="relative">
-                      <svg
-                        className="w-12 h-12 text-red-500"
-                        fill="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 
-                           2 5.42 4.42 3 7.5 3c1.74 0 3.41 0.81 
-                           4.5 2.09C13.09 3.81 14.76 3 16.5 3 
-                           19.58 3 22 5.42 22 8.5c0 3.78-3.4 
-                           6.86-8.55 11.54L12 21.35z" />
-                      </svg>
-                      <span className="absolute inset-0 flex items-center justify-center text-white font-bold">
-                        {flashPlans.reduce(
-                          (total, fp) => total + (fp.likes || 0),
-                          0
-                        )}
-                      </span>
-                    </div>
-                    <div className="text-sm text-gray-600">Me Gusta</div>
-                  </div>
-                  <div className="text-center bg-indigo-200 rounded-xl p-4 min-w-[100px]">
-                    <div className="text-2xl font-bold text-indigo-600">
-                      {flashPlans.length}
-                    </div>
-                    <div className="text-sm text-gray-600">FlashPlans</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="px-8 border-b border-gray-200 bg-white relative">
-            <div className="flex gap-1">
-              {/* botones morados removidos */}
-            </div>
-
-            {/* Editar perfil */}
-            <div className="absolute top-4 right-8">
-              <button
-                onClick={() => setIsEditing(true)}
-                className="bg-gray-100 hover:bg-gray-200 text-gray-700 p-2 rounded-lg transition-all duration-300"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                  />
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          {/* Barra de pestañas */}
-          <div className="flex justify-center space-x-4 mb-8">
-            {[
-              { key: "info", label: "Información" },
-              { key: "planes", label: "Mis Planes" },
-              { key: "flashplans", label: "FlashPlans" },
-            ].map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-300 ${
-                  activeTab === tab.key
-                    ? "bg-gradient-to-r from-yellow-400 to-pink-500 text-white shadow-lg"
-                    : "bg-white text-gray-700 border border-gray-300 hover:from-yellow-400 hover:to-pink-500 hover:bg-gradient-to-r hover:text-white"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Contenido de pestañas */}
-          <div className="p-5">
-            {activeTab === "info" && (
-              <div className="space-y-6">
-                <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
-                  Información Personal
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {[
-                    {
-                      icon: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z",
-                      label: "Nombre",
-                      value: perfilData.nombre,
-                    },
-                    {
-                      icon: "M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z",
-                      label: "Celular",
-                      value: perfilData.celular,
-                    },
-                    {
-                      icon: "M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z",
-                      label: "Ciudad",
-                      value: perfilData.ciudad,
-                    },
-                    {
-                      icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
-                      label: "Edad",
-                      value: `${perfilData.edad} años`,
-                    },
-                    {
-                      icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
-                      label: "Términos Aceptados",
-                      value: perfilData.terminosAceptados ? "Sí" : "No",
-                    },
-                    {
-                      icon: "M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207",
-                      label: "Correo",
-                      value: perfilData.email || user?.email,
-                    },
-                  ].map((item, index) => (
-                    <div
-                      key={index}
-                      className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-6 border border-purple-100"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="bg-gradient-to-b from-pink-600 to-blue-600 p-3 rounded-lg">
-                          <svg
-                            className="w-6 h-6 text-white"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d={item.icon}
+                    {/* Contenido */}
+                    <div className="p-5">
+                      {/* Header con avatar y nombre */}
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          {imageUrl ? (
+                            <img
+                              src={imageUrl}
+                              alt="Avatar"
+                              className="w-10 h-10 rounded-full object-cover border-2 border-purple-200"
                             />
-                          </svg>
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-sm font-bold border-2 border-purple-200">
+                              {mostrarInicial()}
+                            </div>
+                          )}
+                          <div>
+                            <span className="font-bold text-gray-800 text-sm">
+                              {perfilData?.nombre || "Usuario"}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                              <span className="text-xs text-green-600 font-medium">Mi Plan</span>
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm text-gray-600 font-medium">
-                            {item.label}
-                          </p>
-                          <p className="text-lg text-gray-800 font-semibold">
-                            {item.value || "No especificado"}
-                          </p>
-                        </div>
+                        <span className="text-xs text-gray-400 bg-gray-50 px-2 py-1 rounded-lg">
+                          {plan.createdAt 
+                            ? new Date(plan.createdAt).toLocaleDateString("es-CO", {
+                                day: "2-digit",
+                                month: "2-digit",
+                              })
+                            : ""}
+                        </span>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
-            {activeTab === "planes" && (
-              <div>
-                <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
-                  Mis Planes
-                </h2>
+                      {/* Título */}
+                      <h3 className="text-xl font-bold text-gray-900 mb-3 line-clamp-2 group-hover:text-purple-600 transition-colors">
+                        {plan.title || "Plan sin título"}
+                      </h3>
 
-                <div className="flex justify-end mb-6">
-                  <span className="bg-purple-100 text-purple-600 px-3 py-1 rounded-full text-sm font-medium">
-                    {planes.length} planes
-                  </span>
-                </div>
-
-                {planes.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {planes.map((plan) => (
-                      <div
-                        key={plan.id}
-                        className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow duration-300"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="bg-purple-100 p-2 rounded-lg">
-                            <svg
-                              className="w-5 h-5 text-pink-600"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M9 5H7a2 2 0 00-2 2v11a2 2 0 002 2h6a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                              />
+                      {/* Fecha y hora del plan */}
+                      <div className="flex items-center text-sm text-gray-600 gap-4 mb-3">
+                        <span className="flex items-center gap-2 bg-blue-50 px-3 py-1 rounded-lg">
+                          <Calendar className="w-4 h-4 text-blue-600" />
+                          {formatearFechaPlan(plan.date)}
+                        </span>
+                        {plan.timeString && (
+                          <span className="flex items-center gap-2 bg-green-50 px-3 py-1 rounded-lg">
+                            <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3"/>
                             </svg>
-                          </div>
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-gray-800 mb-1">
-                              {plan.titulo || "Plan sin título"}
-                            </h3>
-                            <p className="text-sm text-gray-600">
-                              {plan.descripcion
-                                ? plan.descripcion.substring(0, 60) + "..."
-                                : "Sin descripción"}
-                            </p>
-                          </div>
-                        </div>
+                            {plan.timeString}
+                          </span>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <div className="bg-gray-100 rounded-full p-6 w-24 h-24 mx-auto mb-4 flex items-center justify-center">
-                      <svg
-                        className="w-12 h-12 text-gray-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 5H7a2 2 0 00-2 2v11a2 2 0 002 2h6a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                        />
-                      </svg>
+
+                      {/* Ubicación */}
+                      {plan.location && (
+                        <div className="flex items-center gap-2 text-sm text-gray-600 mb-3 bg-purple-50 px-3 py-2 rounded-lg">
+                          <MapPin className="w-4 h-4 text-purple-600" />
+                          <span className="truncate font-medium">{plan.location}</span>
+                        </div>
+                      )}
+
+                      {/* Descripción */}
+                      <p className="text-gray-600 text-sm mb-4 line-clamp-2 leading-relaxed">
+                        {plan.description || "Sin descripción"}
+                      </p>
+
+                      {/* Estadísticas de interacción */}
+                      <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                        <div className="flex items-center gap-4 text-xs">
+                          <span className="flex items-center gap-1 text-red-500 font-medium">
+                            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                            {plan.likes?.length || 0} likes
+                          </span>
+                          <span className="flex items-center gap-1 text-blue-500 font-medium">
+                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                            {plan.participants?.length || 0} participantes
+                          </span>
+                          <span className="flex items-center gap-1 text-green-500 font-medium">
+                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                            {plan.participants?.length || 0} participantes
+                          </span>
+                          <span className="flex items-center gap-1 text-green-500 font-medium">
+                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                            {plan.commentCount || 0} comentarios
+                          </span>
+                        </div>
+                        {plan.enableWhatsapp && (
+                          <div className="flex items-center gap-1 text-green-600 bg-green-50 px-2 py-1 rounded-lg">
+                            <Phone className="w-3 h-3" />
+                            <span className="text-xs font-bold">WhatsApp</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                      No tienes planes publicados
-                    </h3>
-                    <p className="text-black">
-                      ¡Empieza a crear tus primeros planes y compártelos con la
-                      comunidad!
-                    </p>
                   </div>
-                )}
+                ))}
               </div>
-            )}
-
-            {activeTab === "flashplans" && (
-              <div>
-                <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
-                  Mis FlashPlans
-                </h2>
-
-                <div className="flex justify-end mb-6">
-                  <span className="bg-pink-100 text-pink-800 px-3 py-1 rounded-full text-sm font-medium">
-                    {flashPlans.length} flashplans
-                  </span>
+            ) : (
+              /* Si no tiene planes */
+              <div className="text-center py-16">
+                <div className="bg-gradient-to-br from-purple-100 to-pink-100 rounded-full p-8 w-32 h-32 mx-auto mb-6 flex items-center justify-center">
+                  <Calendar className="w-16 h-16 text-purple-500" />
                 </div>
-
-                {flashPlans.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {flashPlans.map((fp) => (
-                      <div
-                        key={fp.id}
-                        className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow duration-300"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="bg-pink-100 p-2 rounded-lg">
-                            <svg
-                              className="w-5 h-5 text-pink-600"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M13 10V3L4 14h7v7l9-11h-7z"
-                              />
-                            </svg>
-                          </div>
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-black mb-1">
-                              {fp.titulo || "FlashPlan sin título"}
-                            </h3>
-                            <p className="text-sm text-gray-600">
-                              {fp.descripcion
-                                ? fp.descripcion.substring(0, 60) + "..."
-                                : "Sin descripción"}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <div className="bg-gray-100 rounded-full p-6 w-24 h-24 mx-auto mb-4 flex items-center justify-center">
-                      <svg
-                        className="w-12 h-12 text-gray-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M13 10V3L4 14h7v7l9-11h-7z"
-                        />
-                      </svg>
-                    </div>
-                    <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                      No tienes flashplans publicados
-                    </h3>
-                    <p className="text-gray-600">
-                      ¡Crea tus primeros flashplans para planes rápidos e
-                      inmediatos!
-                    </p>
-                  </div>
-                )}
+                <h3 className="text-2xl font-bold text-gray-800 mb-3">
+                  No tienes planes publicados
+                </h3>
+                <p className="text-gray-600 mb-8 max-w-md mx-auto">
+                  Empieza a crear tus primeros planes increíbles y compártelos con la comunidad de SindesParches
+                </p>
+                <button
+                  onClick={() => setModalCrearPlan(true)}
+                  className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-8 py-4 rounded-2xl font-bold hover:scale-105 transition-all duration-300 shadow-lg hover:shadow-xl"
+                >
+                  ✨ Crear mi primer plan
+                </button>
               </div>
             )}
           </div>
-        </div>
+        )}
 
-        {/* Modal edición */}
-        <EditarPerfilModal
-          isOpen={isEditing}
-          userData={perfilData}
-          onClose={() => setIsEditing(false)}
-          onSave={async (newData) => {
-            const perfilRef = doc(db, "perfil", user.uid);
-            await updateDoc(perfilRef, newData);
-            setPerfilData({ ...perfilData, ...newData });
-          }}
-        />
+        {/* TAB FLASHPLANS */}
+        {activeTab === "flashplans" && (
+          <div>
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-3xl font-bold text-gray-800">Mis FlashPlans</h2>
+              <span className="bg-gradient-to-r from-pink-100 to-orange-100 text-pink-700 px-4 py-2 rounded-full text-sm font-bold border border-pink-200">
+                {flashPlans.length} flashplans
+              </span>
+            </div>
+            {flashPlans.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {flashPlans.map((flashPlan) => (
+                  <div key={flashPlan.id} className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300">
+                    <p className="text-gray-600">FlashPlan: {flashPlan.id}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-16">
+                <div className="bg-gradient-to-br from-pink-100 to-orange-100 rounded-full p-8 w-32 h-32 mx-auto mb-6 flex items-center justify-center">
+                  <MapPin className="w-16 h-16 text-pink-500" />
+                </div>
+                <h3 className="text-2xl font-bold text-gray-800 mb-3">
+                  No tienes FlashPlans aún
+                </h3>
+                <p className="text-gray-600">Próximamente podrás crear FlashPlans</p>
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
     </div>
-  );
+  </div>
+
+  {/* Modales */}
+  <EditarPerfilModal
+    isOpen={isEditing}
+    userData={perfilData}
+    onClose={() => setIsEditing(false)}
+    onSave={async (newData) => {
+      const perfilRef = doc(db, "perfil", user.uid);
+      await updateDoc(perfilRef, newData);
+      setPerfilData({ ...perfilData, ...newData });
+    }}
+  />
+
+  <PlanModal
+    isOpen={modalCrearPlan}
+    onClose={() => setModalCrearPlan(false)}
+    onPlanCreated={(nuevoPlan) => {
+      setPlanes((prev) => [...prev, nuevoPlan]);
+      setModalCrearPlan(false);
+    }}
+  />
+
+  {selectedPlan && (
+    <PlanDetailsModal
+      isOpen={isPlanModalOpen}
+      onClose={() => {
+        setIsPlanModalOpen(false);
+        setSelectedPlan(null);
+      }}
+      plan={selectedPlan}
+      user={user}
+    />
+  )}
+</div>
+);
 }
 
 export default Perfil;

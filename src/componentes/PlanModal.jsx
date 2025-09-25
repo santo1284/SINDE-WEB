@@ -1,3 +1,4 @@
+//PlanModal
 import React, { useState, useEffect } from 'react';
 import { X, MapPin, Camera, Clock, Calendar } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
