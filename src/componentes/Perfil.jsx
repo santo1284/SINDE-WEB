@@ -1,3 +1,4 @@
+// Perfil.jsx - Diseño Mejorado con Estilo Moderno e Interacciones
 import React, { useEffect, useState } from "react";
 import { auth, db, storage } from "../firebase/firebase-config";
 import {
@@ -15,7 +16,8 @@ import EditarPerfilModal from "./EditarPerfil";
 import PlanModal from "./PlanModal";
 import PlanDetailsModal from "./PlanDetailsModal";
 import { onAuthStateChanged } from "firebase/auth";
-import { User, Phone, MapPin, Calendar, Mail, Check, Edit } from "lucide-react";
+import { User, Phone, MapPin, Calendar, Mail, Check, Edit, Heart, Plus, Share2, MessageCircle } from "lucide-react";
+
 function Perfil({ onBack }) {
 const [perfilData, setPerfilData] = useState(null);
 const [planes, setPlanes] = useState([]);
@@ -28,6 +30,169 @@ const [modalCrearPlan, setModalCrearPlan] = useState(false);
 const [user, setUser] = useState(null);
 const [selectedPlan, setSelectedPlan] = useState(null);
 const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+const [isCommentsModalOpen, setIsCommentsModalOpen] = useState(false);
+const [selectedPlanForComments, setSelectedPlanForComments] = useState(null);
+const [commentText, setCommentText] = useState("");
+const [planComments, setPlanComments] = useState({});
+
+// Estados para las interacciones de cada plan
+const [planInteractions, setPlanInteractions] = useState({});
+
+// Función para compartir un plan
+const handleSharePlan = async (plan) => {
+  const planUrl = `${window.location.origin}/plan/${plan.id}`;
+  const shareData = {
+    title: plan.title || 'Plan en SindesParches',
+    text: plan.description || 'Ven a este plan increíble',
+    url: planUrl,
+  };
+
+  try {
+    if (navigator.share) {
+      // Usar la API nativa de compartir del navegador
+      await navigator.share(shareData);
+      
+      // Incrementar contador de compartidos
+      setPlanInteractions(prev => {
+        const current = prev[plan.id] || {
+          likes: 0,
+          isLiked: false,
+          shares: 0
+        };
+        return {
+          ...prev,
+          [plan.id]: {
+            ...current,
+            shares: current.shares + 1
+          }
+        };
+      });
+    } else {
+      // Fallback: copiar al portapapeles
+      await navigator.clipboard.writeText(planUrl);
+      alert('¡Enlace copiado al portapapeles!');
+    }
+  } catch (error) {
+    console.log('Error al compartir:', error);
+  }
+};
+
+// Función para abrir modal de comentarios
+const handleOpenComments = (plan) => {
+  setSelectedPlanForComments(plan);
+  setIsCommentsModalOpen(true);
+  setCommentText("");
+};
+
+// Función para enviar comentario
+const handleSendComment = () => {
+  if (!commentText.trim()) return;
+  
+  const newComment = {
+    id: Date.now(),
+    user: perfilData?.nombre || "Usuario",
+    text: commentText,
+    date: new Date(),
+    avatar: imageUrl
+  };
+  
+  setPlanComments(prev => ({
+    ...prev,
+    [selectedPlanForComments.id]: [
+      ...(prev[selectedPlanForComments.id] || []),
+      newComment
+    ]
+  }));
+  
+  setCommentText("");
+  setIsCommentsModalOpen(false);
+};
+
+// Función para participar en un plan
+const handleJoinPlan = (planId) => {
+  setPlanInteractions(prev => {
+    const current = prev[planId] || {
+      likes: 0,
+      isLiked: false,
+      shares: 0,
+      hasJoined: false
+    };
+    
+    return {
+      ...prev,
+      [planId]: {
+        ...current,
+        hasJoined: !current.hasJoined
+      }
+    };
+  });
+};
+
+// Calcular totales de me gustas
+const getTotalLikes = () => {
+  return Object.values(planInteractions).reduce((total, plan) => {
+    return total + (plan.isLiked ? 1 : 0);
+  }, 0);
+};
+
+// Función para manejar interacciones de un plan específico
+const handlePlanInteraction = (planId, type) => {
+  setPlanInteractions(prev => {
+    const current = prev[planId] || {
+      likes: 0,
+      isLiked: false,
+      participants: 1,
+      hasJoined: false,
+      comments: 0,
+      shares: 0
+    };
+
+    const updated = { ...current };
+
+    switch (type) {
+      case 'like':
+        if (updated.isLiked) {
+          updated.likes -= 1;
+          updated.isLiked = false;
+        } else {
+          updated.likes += 1;
+          updated.isLiked = true;
+        }
+        break;
+      case 'join':
+        if (updated.hasJoined) {
+          updated.participants -= 1;
+          updated.hasJoined = false;
+        } else {
+          updated.participants += 1;
+          updated.hasJoined = true;
+        }
+        break;
+      case 'comment':
+        updated.comments += 1;
+        break;
+      case 'share':
+        updated.shares += 1;
+        break;
+    }
+
+    return {
+      ...prev,
+      [planId]: updated
+    };
+  });
+};
+
+// Función para obtener las interacciones de un plan
+const getPlanInteractions = (planId) => {
+  return planInteractions[planId] || {
+    likes: 0,
+    isLiked: false,
+    shares: 0,
+    hasJoined: false
+  };
+};
+
 // Función para cargar perfil
 const fetchPerfil = async (currentUser) => {
 try {
@@ -51,6 +216,7 @@ setPerfilData(perfilSnap.data());
   setImageLoading(false);
 }
 };
+
 // Función para cargar flashPlans
 const fetchFlashPlans = async (currentUser) => {
 try {
@@ -64,6 +230,7 @@ setFlashPlans(flashSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
 console.error("Error cargando flashPlans:", error);
 }
 };
+
 // Escuchar planes en tiempo real
 const listenPlanes = (currentUser) => {
 const q = query(collection(db, "planes"), where("userId", "==", currentUser.uid));
@@ -75,6 +242,7 @@ id: doc.id,
 setPlanes(planesData);
 });
 };
+
 // useEffect con onAuthStateChanged
 useEffect(() => {
 const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -92,6 +260,7 @@ setFlashPlans([]);
 });
 return () => unsubscribe();
 }, []);
+
 const mostrarInicial = () => {
 return (
 perfilData?.nombre?.charAt(0) ||
@@ -100,6 +269,7 @@ user?.email?.charAt(0) ||
 "U"
 ).toUpperCase();
 };
+
 const formatearFecha = () => {
 const fechaData =
 perfilData?.fechaAceptacionTerminos ||
@@ -124,6 +294,7 @@ try {
   return "No disponible";
 }
 };
+
 // Función para formatear fecha de planes
 const formatearFechaPlan = (date) => {
 if (!date) return 'Sin fecha';
@@ -149,6 +320,7 @@ try {
   return 'Fecha inválida';
 }
 };
+
 // Si no hay perfil cargado todavía
 if (!perfilData) {
 return (
@@ -160,73 +332,15 @@ return (
 </div>
 );
 }
-// JSX del perfil con diseño mejorado y animaciones de fondo
+
+// JSX del perfil con diseño mejorado
 return (
 <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-pink-900 relative overflow-hidden">
-  {/* Animaciones de fondo dinámicas */}
+  {/* Elementos decorativos de fondo */}
   <div className="absolute inset-0 overflow-hidden pointer-events-none">
-    {/* Círculos flotantes grandes */}
-    <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
-    <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-pink-500/20 rounded-full blur-3xl animate-pulse" style={{animationDelay: '1s'}}></div>
-    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl animate-pulse" style={{animationDelay: '2s'}}></div>
-    
-    {/* Orbes flotantes medianos */}
-    <div className="absolute top-20 left-20 w-32 h-32 bg-cyan-400/30 rounded-full blur-2xl animate-bounce" style={{animationDuration: '6s', animationDelay: '0.5s'}}></div>
-    <div className="absolute top-1/3 right-32 w-24 h-24 bg-yellow-400/25 rounded-full blur-xl animate-bounce" style={{animationDuration: '8s', animationDelay: '1.5s'}}></div>
-    <div className="absolute bottom-32 left-1/3 w-20 h-20 bg-green-400/30 rounded-full blur-xl animate-bounce" style={{animationDuration: '7s', animationDelay: '3s'}}></div>
-    <div className="absolute top-1/4 left-1/2 w-16 h-16 bg-pink-400/40 rounded-full blur-lg animate-bounce" style={{animationDuration: '9s', animationDelay: '2.5s'}}></div>
-    
-    {/* Partículas pequeñas flotantes */}
-    <div className="absolute top-1/6 right-1/4 w-3 h-3 bg-white/60 rounded-full animate-ping" style={{animationDuration: '4s'}}></div>
-    <div className="absolute top-2/3 left-1/6 w-2 h-2 bg-purple-300/70 rounded-full animate-ping" style={{animationDuration: '5s', animationDelay: '1s'}}></div>
-    <div className="absolute bottom-1/4 right-1/3 w-4 h-4 bg-pink-300/50 rounded-full animate-ping" style={{animationDuration: '6s', animationDelay: '2s'}}></div>
-    <div className="absolute top-1/2 right-1/6 w-2 h-2 bg-cyan-300/80 rounded-full animate-ping" style={{animationDuration: '3s', animationDelay: '0.5s'}}></div>
-    <div className="absolute bottom-1/3 left-1/2 w-3 h-3 bg-yellow-300/60 rounded-full animate-ping" style={{animationDuration: '7s', animationDelay: '3.5s'}}></div>
-    
-    {/* Estrellas titilantes */}
-    <div className="absolute top-1/5 left-1/4 w-1 h-1 bg-white rounded-full animate-pulse opacity-70"></div>
-    <div className="absolute top-1/3 right-1/5 w-1 h-1 bg-white rounded-full animate-pulse opacity-50" style={{animationDelay: '1s'}}></div>
-    <div className="absolute bottom-1/5 left-2/3 w-1 h-1 bg-white rounded-full animate-pulse opacity-80" style={{animationDelay: '2s'}}></div>
-    <div className="absolute top-2/3 left-1/5 w-1 h-1 bg-white rounded-full animate-pulse opacity-60" style={{animationDelay: '0.5s'}}></div>
-    <div className="absolute bottom-1/2 right-1/4 w-1 h-1 bg-white rounded-full animate-pulse opacity-90" style={{animationDelay: '1.5s'}}></div>
-    <div className="absolute top-1/4 left-3/4 w-1 h-1 bg-white rounded-full animate-pulse opacity-40" style={{animationDelay: '3s'}}></div>
-    
-    {/* Ondas concéntricas */}
-    <div className="absolute top-1/4 right-1/3 w-40 h-40 border border-white/10 rounded-full animate-ping" style={{animationDuration: '8s'}}></div>
-    <div className="absolute bottom-1/3 left-1/4 w-32 h-32 border border-purple-300/20 rounded-full animate-ping" style={{animationDuration: '10s', animationDelay: '2s'}}></div>
-    
-    {/* Figuras geométricas flotantes */}
-    <div className="absolute top-1/6 left-1/3 w-6 h-6 bg-gradient-to-br from-purple-400/30 to-pink-400/30 transform rotate-45 animate-spin" style={{animationDuration: '20s'}}></div>
-    <div className="absolute bottom-1/4 right-1/6 w-4 h-4 bg-gradient-to-br from-cyan-400/40 to-blue-400/40 transform rotate-12 animate-spin" style={{animationDuration: '15s', animationDelay: '5s'}}></div>
-    <div className="absolute top-2/3 left-2/3 w-5 h-5 bg-gradient-to-br from-yellow-400/35 to-orange-400/35 transform -rotate-12 animate-spin" style={{animationDuration: '25s', animationDelay: '3s'}}></div>
-    
-    {/* Líneas de conexión animadas */}
-    <div className="absolute top-1/3 left-1/2 w-px h-20 bg-gradient-to-b from-transparent via-white/20 to-transparent animate-pulse" style={{animationDelay: '1s'}}></div>
-    <div className="absolute top-1/2 left-1/3 w-16 h-px bg-gradient-to-r from-transparent via-purple-300/30 to-transparent animate-pulse" style={{animationDelay: '2.5s'}}></div>
-    
-    {/* Efecto de partículas deslizantes */}
-    <div className="absolute inset-0">
-      <div className="absolute top-1/4 -left-2 w-1 h-1 bg-white/70 rounded-full animate-pulse"></div>
-      <div className="absolute top-1/3 -left-2 w-0.5 h-0.5 bg-purple-300/60 rounded-full animate-pulse" style={{animationDelay: '1s'}}></div>
-      <div className="absolute top-1/2 -left-2 w-1 h-1 bg-pink-300/50 rounded-full animate-pulse" style={{animationDelay: '2s'}}></div>
-      <div className="absolute top-2/3 -left-2 w-0.5 h-0.5 bg-cyan-300/70 rounded-full animate-pulse" style={{animationDelay: '3s'}}></div>
-    </div>
-  </div>
-
-  {/* Efecto de lluvia de estrellas sutil */}
-  <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-30">
-    {[...Array(12)].map((_, i) => (
-      <div
-        key={i}
-        className="absolute w-0.5 h-0.5 bg-white rounded-full animate-bounce"
-        style={{
-          left: `${Math.random() * 100}%`,
-          top: `${Math.random() * 100}%`,
-          animationDuration: `${3 + Math.random() * 4}s`,
-          animationDelay: `${Math.random() * 3}s`
-        }}
-      ></div>
-    ))}
+    <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/20 rounded-full blur-3xl"></div>
+    <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-pink-500/20 rounded-full blur-3xl"></div>
+    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl"></div>
   </div>
 
   <div className="relative z-10 max-w-6xl mx-auto px-4 lg:px-6 py-6">
@@ -260,47 +374,79 @@ return (
           <Edit className="w-5 h-5" />
         </button>
 
-        {/* Contenido del header */}
-        <div className="relative flex flex-col items-center text-white text-center">
-          
-          {/* Foto de perfil mejorada */}
-          <div className="relative mb-6">
-            <div className="w-32 h-32 rounded-full border-4 border-white/30 shadow-2xl overflow-hidden bg-white/10 backdrop-blur-sm">
-              {imageLoading ? (
-                <div className="w-full h-full flex items-center justify-center">
-                  <div className="animate-pulse text-white/50 text-lg">...</div>
-                </div>
-              ) : imageUrl ? (
-                <img src={imageUrl} alt="Foto perfil" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-3xl font-bold text-white">
-                  {mostrarInicial()}
-                </div>
-              )}
-            </div>
-            
-            {/* Badge online */}
-            <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-green-500 rounded-full border-4 border-white/30 flex items-center justify-center">
-              <div className="w-3 h-3 bg-green-300 rounded-full animate-pulse"></div>
-            </div>
+{/* Contenido del header */}
+<div className="relative flex flex-col items-center justify-center text-white text-center">
+  
+  {/* Foto de perfil mejorada */}
+  <div className="relative mb-6 flex justify-center">
+    <div className="w-32 h-32 rounded-full border-4 border-white/30 shadow-2xl overflow-hidden bg-white/10 backdrop-blur-sm">
+      {imageLoading ? (
+        <div className="w-full h-full flex items-center justify-center">
+          <div className="animate-pulse text-white/50 text-lg">...</div>
+        </div>
+      ) : imageUrl ? (
+        <img 
+          src={imageUrl} 
+          alt="Foto perfil" 
+          className="w-full h-full object-cover" 
+        />
+      ) : (
+        <div className="w-full h-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-3xl font-bold text-white">
+          {mostrarInicial()}
+        </div>
+      )}
+    </div>
+    
+    {/* Badge online */}
+    <div 
+      className="absolute w-6 h-6 bg-green-500 rounded-full border-2 border-white flex items-center justify-center shadow-lg"
+      style={{
+        bottom: '8px',
+        right: '8px',
+      }}
+    >
+      <div className="w-2 h-2 bg-white rounded-full"></div>
+    </div>
+  </div>
+
+  {/* Información del usuario */}
+  <div className="flex flex-col items-center text-center">
+    <h1 className="text-3xl font-bold mb-3 tracking-tight">
+      {perfilData.nombre}
+    </h1>
+    
+    <div className="flex items-center justify-center gap-2 text-white/90 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full border border-white/20 mb-7">
+      <Calendar className="w-4 h-4" />
+      <span className="text-sm font-medium">
+        Miembro desde {formatearFecha()}
+      </span>
+    </div>
+  </div>
+</div>
+
+      {/* Estadísticas generales - CUADRITOS PEQUEÑOS Y DELICADOS */}
+      <div className="bg-white/95 backdrop-blur-xl border-x border-white/20 px-8 py-4">
+        <div className="flex justify-center gap-3 mb-4">
+          {/* Cuadrito de Me gustas */}
+          <div className="bg-gradient-to-br from-red-50 to-pink-50 rounded-xl px-4 py-2 border border-red-100 flex items-center gap-2">
+            <Heart className="w-4 h-4 text-red-500 fill-red-500" />
+            <span className="text-lg font-bold text-red-600">{getTotalLikes()}</span>
           </div>
 
-          {/* Información del usuario */}
-          <h1 className="text-3xl font-bold mb-2 tracking-tight">
-            {perfilData.nombre}
-          </h1>
-          
-          <div className="flex items-center gap-2 text-white/90 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full border border-white/20">
-            <Calendar className="w-4 h-4" />
-            <span className="text-sm font-medium">
-              Miembro desde {formatearFecha()}
-            </span>
+          {/* Cuadrito de Planes */}
+          <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl px-4 py-2 border border-purple-100 flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-purple-500" />
+            <span className="text-lg font-bold text-purple-600">{planes.length}</span>
+          </div>
+
+          {/* Cuadrito de FlashPlans */}
+          <div className="bg-gradient-to-br from-pink-50 to-rose-50 rounded-xl px-4 py-2 border border-pink-100 flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-pink-500" />
+            <span className="text-lg font-bold text-pink-600">{flashPlans.length}</span>
           </div>
         </div>
-      </div>
 
-      {/* Tabs mejorados */}
-      <div className="bg-white/95 backdrop-blur-xl border-x border-white/20 px-8 py-6">
+        {/* Tabs limpios */}
         <div className="flex justify-center">
           <div className="flex bg-gray-100 rounded-2xl p-2 gap-2">
             {[
@@ -334,7 +480,7 @@ return (
         {/* TAB INFORMACIÓN */}
         {activeTab === "info" && (
           <div className="space-y-8">
-            <h2 className="text-3xl font-bold text-gray-800 text-center mb-12">
+            <h2 className="text-3xl font-bold text-gray-800 text-center mb-10">
               Información Personal
             </h2>
             
@@ -406,13 +552,15 @@ return (
         )}
 
         {/* TAB PLANES */}
+        
         {activeTab === "planes" && (
           <div>
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-3xl font-bold text-gray-800">
-                Mis Planes
-              </h2>
-              <span className="bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700 px-4 py-2 rounded-full text-sm font-bold border border-purple-200">
+          <div className="grid grid-cols-3 items-center mb-8">
+            <div></div> {/* Columna vacía para balancear */}
+            <h2 className="text-3xl font-bold text-gray-800 text-center mb-10">
+              Mis Planes
+               </h2>
+              <span className="justify-self-end bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700 px-4 py-2 rounded-full text-sm font-bold border border-purple-200">
                 {planes.length} planes creados
               </span>
             </div>
@@ -420,127 +568,185 @@ return (
             {/* Si tiene planes */}
             {planes.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {planes.map((plan) => (
-                  <div
-                    key={plan.id}
-                    onClick={() => {
-                      setSelectedPlan(plan);
-                      setIsPlanModalOpen(true);
-                    }}
-                    className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden cursor-pointer hover:shadow-2xl transition-all duration-300 hover:scale-105 group"
-                  >
-                    {/* Imagen principal del plan */}
-                    {plan.imageUrls && plan.imageUrls.length > 0 && (
-                      <div className="relative w-full h-48 overflow-hidden">
-                        <img
-                          src={plan.imageUrls[0]}
-                          alt={plan.title}
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
-                      </div>
-                    )}
-
-                    {/* Contenido */}
-                    <div className="p-5">
-                      {/* Header con avatar y nombre */}
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          {imageUrl ? (
-                            <img
-                              src={imageUrl}
-                              alt="Avatar"
-                              className="w-10 h-10 rounded-full object-cover border-2 border-purple-200"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-sm font-bold border-2 border-purple-200">
-                              {mostrarInicial()}
-                            </div>
-                          )}
-                          <div>
-                            <span className="font-bold text-gray-800 text-sm">
-                              {perfilData?.nombre || "Usuario"}
-                            </span>
-                            <div className="flex items-center gap-1">
-                              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                              <span className="text-xs text-green-600 font-medium">Mi Plan</span>
-                            </div>
-                          </div>
-                        </div>
-                        <span className="text-xs text-gray-400 bg-gray-50 px-2 py-1 rounded-lg">
-                          {plan.createdAt 
-                            ? new Date(plan.createdAt).toLocaleDateString("es-CO", {
-                                day: "2-digit",
-                                month: "2-digit",
-                              })
-                            : ""}
-                        </span>
-                      </div>
-
-                      {/* Título */}
-                      <h3 className="text-xl font-bold text-gray-900 mb-3 line-clamp-2 group-hover:text-purple-600 transition-colors">
-                        {plan.title || "Plan sin título"}
-                      </h3>
-
-                      {/* Fecha y hora del plan */}
-                      <div className="flex items-center text-sm text-gray-600 gap-4 mb-3">
-                        <span className="flex items-center gap-2 bg-blue-50 px-3 py-1 rounded-lg">
-                          <Calendar className="w-4 h-4 text-blue-600" />
-                          {formatearFechaPlan(plan.date)}
-                        </span>
-                        {plan.timeString && (
-                          <span className="flex items-center gap-2 bg-green-50 px-3 py-1 rounded-lg">
-                            <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3"/>
-                            </svg>
-                            {plan.timeString}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Ubicación */}
-                      {plan.location && (
-                        <div className="flex items-center gap-2 text-sm text-gray-600 mb-3 bg-purple-50 px-3 py-2 rounded-lg">
-                          <MapPin className="w-4 h-4 text-purple-600" />
-                          <span className="truncate font-medium">{plan.location}</span>
+                {planes.map((plan) => {
+                  const interactions = getPlanInteractions(plan.id);
+                  
+                  return (
+                    <div
+                      key={plan.id}
+                      className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden hover:shadow-2xl transition-all duration-300 hover:scale-105 group"
+                    >
+                      {/* Imagen principal del plan */}
+                      {plan.imageUrls && plan.imageUrls.length > 0 && (
+                        <div className="relative w-full h-48 overflow-hidden">
+                          <img
+                            src={plan.imageUrls[0]}
+                            alt={plan.title}
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
                         </div>
                       )}
 
-                      {/* Descripción */}
-                      <p className="text-gray-600 text-sm mb-4 line-clamp-2 leading-relaxed">
-                        {plan.description || "Sin descripción"}
-                      </p>
-
-                      {/* Estadísticas de interacción */}
-                      <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                        <div className="flex items-center gap-4 text-xs">
-                          <span className="flex items-center gap-1 text-red-500 font-medium">
-                            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                            {plan.likes?.length || 0} likes
-                          </span>
-                          <span className="flex items-center gap-1 text-blue-500 font-medium">
-                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                            {plan.participants?.length || 0} participantes
-                          </span>
-                          <span className="flex items-center gap-1 text-green-500 font-medium">
-                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                            {plan.participants?.length || 0} participantes
-                          </span>
-                          <span className="flex items-center gap-1 text-green-500 font-medium">
-                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                            {plan.commentCount || 0} comentarios
+                      {/* Contenido */}
+                      <div className="p-5">
+                        {/* Header con avatar y nombre */}
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            {imageUrl ? (
+                              <img
+                                src={imageUrl}
+                                alt="Avatar"
+                                className="w-10 h-10 rounded-full object-cover border-2 border-purple-200"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-sm font-bold border-2 border-purple-200">
+                                {mostrarInicial()}
+                              </div>
+                            )}
+                            <div>
+                              <span className="font-bold text-gray-800 text-sm">
+                                {perfilData?.nombre || "Usuario"}
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                <span className="text-xs text-green-600 font-medium">Mi Plan</span>
+                              </div>
+                            </div>
+                          </div>
+                          <span className="text-xs text-gray-400 bg-gray-50 px-2 py-1 rounded-lg">
+                            {plan.createdAt 
+                              ? new Date(plan.createdAt).toLocaleDateString("es-CO", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                })
+                              : ""}
                           </span>
                         </div>
-                        {plan.enableWhatsapp && (
-                          <div className="flex items-center gap-1 text-green-600 bg-green-50 px-2 py-1 rounded-lg">
-                            <Phone className="w-3 h-3" />
-                            <span className="text-xs font-bold">WhatsApp</span>
+
+                        {/* Título - CLICKEABLE para ver el plan */}
+                        <h3 
+                          onClick={() => {
+                            setSelectedPlan(plan);
+                            setIsPlanModalOpen(true);
+                          }}
+                          className="text-xl font-bold text-gray-900 mb-3 line-clamp-2 group-hover:text-purple-600 transition-colors cursor-pointer"
+                        >
+                          {plan.title || "Plan sin título"}
+                        </h3>
+
+                        {/* Fecha y hora del plan */}
+                        <div className="flex items-center text-sm text-gray-600 gap-4 mb-3">
+                          <span className="flex items-center gap-2 bg-blue-50 px-3 py-1 rounded-lg">
+                            <Calendar className="w-4 h-4 text-blue-600" />
+                            {formatearFechaPlan(plan.date)}
+                          </span>
+                          {plan.timeString && (
+                            <span className="flex items-center gap-2 bg-green-50 px-3 py-1 rounded-lg">
+                              <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3"/>
+                              </svg>
+                              {plan.timeString}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Ubicación */}
+                        {plan.location && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600 mb-3 bg-purple-50 px-3 py-2 rounded-lg">
+                            <MapPin className="w-4 h-4 text-purple-600" />
+                            <span className="truncate font-medium">{plan.location}</span>
                           </div>
                         )}
+
+                        {/* Descripción */}
+                        <p className="text-gray-600 text-sm mb-4 line-clamp-2 leading-relaxed">
+                          {plan.description || "Sin descripción"}
+                        </p>
+
+                        {/* Logo de WhatsApp (si está habilitado) - ARRIBA DE LOS ICONOS */}
+                        {plan.enableWhatsapp && (
+                          <div className="flex justify-end mb-3">
+                            <div className="bg-green-500 p-2 rounded-full shadow-md hover:bg-green-600 transition-colors">
+                              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.087"/>
+                              </svg>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Botones de interacción - ME GUSTA Y PARTICIPAR INTERACTIVOS */}
+                        <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                          {/* Like - CON NÚMERO DENTRO DEL CORAZÓN */}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlanInteraction(plan.id, 'like');
+                            }}
+                            className="relative flex items-center hover:bg-gray-50 px-3 py-2 rounded-lg transition-colors group"
+                          >
+                            <div className="relative">
+                              <Heart 
+                                className={`w-7 h-7 ${interactions.isLiked ? 'fill-red-500 text-red-500' : 'text-gray-600'} transition-all`} 
+                              />
+                              {interactions.likes > 0 && (
+                                <span className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-[10px] font-bold ${
+                                  interactions.isLiked ? 'text-white' : 'text-gray-600'
+                                }`}>
+                                  {interactions.likes}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+
+                          {/* Participar - BOTÓN INTERACTIVO */}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleJoinPlan(plan.id);
+                            }}
+                            className={`flex items-center space-x-1 hover:bg-gray-50 px-3 py-2 rounded-lg transition-all ${
+                              interactions.hasJoined ? 'bg-green-50' : ''
+                            }`}
+                          >
+                            <Plus 
+                              className={`w-5 h-5 transition-colors ${
+                                interactions.hasJoined ? 'text-green-600' : 'text-gray-600'
+                              }`} 
+                            />
+                            <span className={`text-sm font-medium ${
+                              interactions.hasJoined ? 'text-green-600' : 'text-gray-600'
+                            }`}>
+                              {interactions.hasJoined ? 'Unido' : 'Participar'}
+                            </span>
+                          </button>
+
+                          {/* Comentarios - SOLO MOSTRAR NÚMEROS DE FIREBASE */}
+                          <div className="flex items-center space-x-1 px-3 py-2">
+                            <MessageCircle className="w-5 h-5 text-gray-600" />
+                            <span className="text-sm text-gray-600">
+                              {plan.commentCount || 0}
+                            </span>
+                          </div>
+
+                          {/* Compartir - BOTÓN INTERACTIVO PARA COMPARTIR */}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSharePlan(plan);
+                            }}
+                            className="flex items-center space-x-1 hover:bg-gray-50 px-3 py-2 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Share2 className="w-5 h-5 text-gray-600" />
+                            <span className="text-sm text-gray-600">
+                              {interactions.shares}
+                            </span>
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               /* Si no tiene planes */
@@ -568,11 +774,13 @@ return (
         {/* TAB FLASHPLANS */}
         {activeTab === "flashplans" && (
           <div>
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-3xl font-bold text-gray-800">Mis FlashPlans</h2>
-              <span className="bg-gradient-to-r from-pink-100 to-orange-100 text-pink-700 px-4 py-2 rounded-full text-sm font-bold border border-pink-200">
-                {flashPlans.length} flashplans
-              </span>
+            <div className="relative mb-8">
+              <h2 className="text-3xl font-bold text-gray-800 text-center">
+                Mis FlashPlans
+              </h2>
+               <span className="absolute right-0 top-1/2 -translate-y-1/2 bg-gradient-to-r from-pink-100 to-orange-100 text-pink-700 px-4 py-2 rounded-full text-sm font-bold border border-pink-200">
+                  {flashPlans.length} flashplans
+               </span>
             </div>
             {flashPlans.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -621,19 +829,20 @@ return (
     }}
   />
 
-  {selectedPlan && (
-    <PlanDetailsModal
-      isOpen={isPlanModalOpen}
-      onClose={() => {
-        setIsPlanModalOpen(false);
-        setSelectedPlan(null);
-      }}
-      plan={selectedPlan}
-      user={user}
-    />
-  )}
-</div>
-);
+   {selectedPlan && (
+          <PlanDetailsModal
+            isOpen={isPlanModalOpen}
+            onClose={() => {
+              setIsPlanModalOpen(false);
+              setSelectedPlan(null);
+            }}
+            plan={selectedPlan}
+            user={user}
+          />
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default Perfil;
