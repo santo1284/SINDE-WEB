@@ -48,13 +48,80 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
   const [directions, setDirections] = useState(null);
   const [travelTime, setTravelTime] = useState(null);
   const [mapCenter, setMapCenter] = useState(null);
-  const [creatorInfo, setCreatorInfo] = useState({ name: 'Usuario', photoURL: null }); // Nuevo estado
+  const [creatorInfo, setCreatorInfo] = useState({ name: 'Usuario', photoURL: null });
+  const [likingInProgress, setLikingInProgress] = useState(false);
+  const [participatingInProgress, setParticipatingInProgress] = useState(false);
 
   // Hook para Google Maps
   const isLoaded = Boolean(window.google?.maps);
 
   // Inicializar Firebase Storage
   const storage = getStorage();
+
+  // ✅ CÓDIGO CORREGIDO: Cargar información del creador
+  useEffect(() => {
+    const fetchCreatorInfo = async () => {
+      // Verificar primero qué campo tiene el plan
+      const creatorId = plan?.userId || plan?.creatorId;
+      
+      console.log('🔍 Debug - Plan completo:', plan);
+      console.log('🔍 userId encontrado:', creatorId);
+      
+      if (!creatorId) {
+        console.log('⚠️ No se encontró userId en el plan');
+        setCreatorInfo({ 
+          name: plan?.createdByName || plan?.creatorName || 'Usuario', 
+          photoURL: null 
+        });
+        return;
+      }
+
+      try {
+        // Obtener perfil desde Firestore
+        const perfilRef = doc(db, 'perfil', creatorId);
+        const perfilSnap = await getDoc(perfilRef);
+        
+        if (perfilSnap.exists()) {
+          const profileData = perfilSnap.data();
+          console.log('✅ Perfil encontrado:', profileData);
+          
+          let photoURL = profileData.fotoURL;
+          
+          // Si no hay foto en Firestore, intentar buscar en Storage
+          if (!photoURL) {
+            try {
+              const fotoRef = ref(storage, `profile_pictures/${creatorId}`);
+              photoURL = await getDownloadURL(fotoRef);
+              console.log('✅ Foto encontrada en Storage:', photoURL);
+            } catch (storageError) {
+              console.log('ℹ️ No se encontró foto en Storage');
+            }
+          }
+          
+          setCreatorInfo({
+            name: profileData.nombre || plan?.createdByName || 'Usuario',
+            photoURL: photoURL
+          });
+        } else {
+          console.log('❌ No existe documento de perfil para este usuario');
+          setCreatorInfo({ 
+            name: plan?.createdByName || plan?.creatorName || 'Usuario', 
+            photoURL: null 
+          });
+        }
+      } catch (error) {
+        console.error('❌ Error obteniendo perfil del creador:', error);
+        setCreatorInfo({ 
+          name: plan?.createdByName || plan?.creatorName || 'Usuario', 
+          photoURL: null 
+        });
+      }
+    };
+
+    if (isOpen) {
+      fetchCreatorInfo();
+    }
+  }, [isOpen, plan?.userId, plan?.creatorId, plan?.createdByName, plan?.creatorName]);
 
   // Cargar ubicación del usuario y calcular ruta
   useEffect(() => {
@@ -118,30 +185,6 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
     return () => unsubscribe();
   }, [isOpen, plan.id]);
 
-  // ✅ NUEVO: Cargar nombre y foto de perfil del creador desde Firestore
-  useEffect(() => {
-    if (plan?.userId) {
-      const userProfileRef = doc(db, 'perfil', plan.userId);
-      getDoc(userProfileRef)
-        .then(docSnap => {
-          if (docSnap.exists()) {
-            const profileData = docSnap.data();
-            setCreatorInfo({
-              name: profileData.nombre, // Usar el campo 'nombre' del perfil
-              photoURL: profileData.profileImageUrl // Usar el campo 'profileImageUrl'
-            });
-          } else {
-            console.log('No se encontró el perfil del creador.');
-            setCreatorInfo({ name: plan.createdByName || 'Usuario', photoURL: null });
-          }
-        })
-        .catch(err => {
-          console.error('Error al obtener el perfil del creador', err);
-          setCreatorInfo({ name: plan.createdByName || 'Usuario', photoURL: null });
-        });
-    }
-  }, [plan?.userId]);
-
   // Función para calcular distancia
   const calcularDistancia = (lat1, lng1, lat2, lng2) => {
     const R = 6371;
@@ -171,8 +214,11 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
     }
   };
 
-  // Dar like
+  // Función optimizada para dar like
   const toggleLike = async () => {
+    if (likingInProgress) return;
+    
+    setLikingInProgress(true);
     try {
       const planRef = doc(db, 'planes', plan.id);
       const yaDioLike = plan.likes?.includes(user.uid);
@@ -184,11 +230,16 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
       });
     } catch (error) {
       console.error('Error al dar like:', error);
+    } finally {
+      setLikingInProgress(false);
     }
   };
 
-  // Participar
+  // Función optimizada para participar
   const toggleParticipation = async () => {
+    if (participatingInProgress) return;
+    
+    setParticipatingInProgress(true);
     try {
       const planRef = doc(db, 'planes', plan.id);
       const yaParticipa = plan.participants?.includes(user.uid);
@@ -200,6 +251,8 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
       });
     } catch (error) {
       console.error('Error al participar:', error);
+    } finally {
+      setParticipatingInProgress(false);
     }
   };
 
@@ -295,31 +348,34 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
 
   if (!isOpen || !plan) return null;
 
-        return (
+  return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
-      
-      {/* Header mejorado */}
-      <div className="relative flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
         
-        {/* Foto de perfil del creador (lado izquierdo) */}
-        <div className="flex items-center gap-3">
-          {/* ✅ LÓGICA CORREGIDA PARA LA FOTO DE PERFIL */}
-          <div className="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center">
-            {creatorInfo.photoURL ? (
-              // Si hay una URL de foto, renderiza la imagen.
-              <img 
-                src={creatorInfo.photoURL} 
-                alt={creatorInfo.name} 
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              // Si no hay URL de foto, renderiza el círculo con la inicial.
-              <div className="w-full h-full flex items-center justify-center text-white font-bold">
-                {(creatorInfo.name?.charAt(0) || 'U').toUpperCase()}
-              </div>
-            )}
-          </div>
+        {/* Header mejorado */}
+        <div className="relative flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50">
+          
+          {/* Foto de perfil del creador (lado izquierdo) */}
+          <div className="flex items-center gap-3">
+            {/* ✅ FOTO DE PERFIL CORREGIDA */}
+            <div className="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center flex-shrink-0">
+              {creatorInfo.photoURL ? (
+                <img 
+                  src={creatorInfo.photoURL} 
+                  alt={creatorInfo.name} 
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    console.log('Error cargando imagen, mostrando inicial');
+                    e.target.style.display = 'none';
+                    e.target.parentElement.innerHTML = `<div class="w-full h-full flex items-center justify-center text-white font-bold text-lg">${(creatorInfo.name?.charAt(0) || 'U').toUpperCase()}</div>`;
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white font-bold text-lg">
+                  {(creatorInfo.name?.charAt(0) || 'U').toUpperCase()}
+                </div>
+              )}
+            </div>
             
             {/* Nombre del creador */}
             <div>
@@ -331,8 +387,8 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
           </div>
 
           {/* Título del plan (centrado) */}
-          <div className="absolute left-1/2 transform -translate-x-1/2 text-center">
-            <h2 className="text-2xl font-bold text-gray-900 max-w-md truncate">
+          <div className="absolute left-1/2 transform -translate-x-1/2 text-center max-w-md">
+            <h2 className="text-2xl font-bold text-gray-900 truncate">
               {plan.title}
             </h2>
           </div>
@@ -346,7 +402,7 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
           </button>
         </div>
 
-        {/* Contenido principal */}
+        {/* Resto del contenido igual... */}
         <div className="flex-1 overflow-y-auto">
           <div className="grid lg:grid-cols-3 gap-6 p-6">
             
@@ -409,7 +465,7 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
                 <h3 className="text-xl font-semibold text-gray-900 mb-3">Descripción</h3>
                 <p className="text-gray-700 leading-relaxed text-lg">{plan.description}</p>
               </div>
-
+              
               {/* Mapa */}
               <div className="bg-gray-50 rounded-xl p-6">
                 <h3 className="text-xl font-semibold text-gray-900 mb-3 flex items-center gap-2">

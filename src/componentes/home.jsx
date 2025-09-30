@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import PlanModal from './PlanModal';
 import PlanDetailsModal from './PlanDetailsModal'
+import FlashPlansSection from './FlashPlansSection';
+import NotificationsPanel from './NotificationsPanel';
 import { v4 as uuidv4 } from "uuid"; 
 import { 
   arrayUnion, 
@@ -15,8 +17,9 @@ import {
   orderBy,
   limit, 
   getDocs,
-  setDoc ,
-  getDoc // <-- agregado
+  setDoc,
+  getDoc,
+  where
 } from 'firebase/firestore';
 import { db, storage, auth } from '../firebase/firebase-config';
 import {
@@ -42,7 +45,10 @@ import {
   ChevronRight,
   Settings,
   Eye,
-  Phone
+  Phone,
+  Sparkles,
+  Star,
+  Zap
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import Slider from 'react-slick';
@@ -54,7 +60,6 @@ import imageCompression from "browser-image-compression";
 
 // Utilidades para manejo de imágenes y datos
 const ImageUtils = {
-  // Comprimir imagen manteniendo calidad
   compressImage: (file, maxWidth = 800, quality = 0.8) => {
     return new Promise((resolve) => {
       const canvas = document.createElement('canvas');
@@ -62,15 +67,10 @@ const ImageUtils = {
       const img = new Image();
       
       img.onload = () => {
-        // Calcular nuevas dimensiones manteniendo aspect ratio
         const ratio = Math.min(maxWidth / img.width, maxWidth / img.height);
         canvas.width = img.width * ratio;
         canvas.height = img.height * ratio;
-        
-        // Dibujar imagen redimensionada
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        
-        // Convertir a blob con compresión
         canvas.toBlob(resolve, 'image/jpeg', quality);
       };
       
@@ -78,7 +78,6 @@ const ImageUtils = {
     });
   },
 
-  // Convertir blob a base64 para almacenamiento
   blobToBase64: (blob) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -115,15 +114,19 @@ const useGeolocation = () => {
 
 const Home = ({ user, onLogout, onShowPerfil }) => {
   const [planes, setPlanes] = useState([]);
-  const [perfilData, setPerfilData] = useState(null); // <-- nuevo estado
+  const [perfilData, setPerfilData] = useState(null);
   const [busqueda, setBusqueda] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [comentarios, setComentarios] = useState({});
   const [ultimosComentarios, setUltimosComentarios] = useState({});
   const [cargandoComentarios, setCargandoComentarios] = useState({});
   
-  // Estados para modales - CORREGIDO
+  // Estados para el comportamiento del header
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const [lastScrollY, setLastScrollY] = useState(0);
+  
   const [modalComentarios, setModalComentarios] = useState({
     isOpen: false,
     planId: null,
@@ -132,34 +135,30 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
 
   const [modalCrearPlan, setModalCrearPlan] = useState(false);
   
-    const [modalPlanDetails, setModalPlanDetails] = useState({
+  const [modalPlanDetails, setModalPlanDetails] = useState({
+    isOpen: false,
+    plan: null
+  });
+
+  const cerrarModalPlanDetails = () => {
+    setModalPlanDetails({
       isOpen: false,
       plan: null
     });
+  };
 
-      // Funciones para manejar modales - CORREGIDO
-    const cerrarModalPlanDetails = () => {
-      setModalPlanDetails({
-        isOpen: false,
-        plan: null
-      });
-    };
-
-    const abrirModalPlanDetails = (plan) => {
-      setModalPlanDetails({
-        isOpen: true,
-        plan: plan
-      });
-    };
+  const abrirModalPlanDetails = (plan) => {
+    setModalPlanDetails({
+      isOpen: true,
+      plan: plan
+    });
+  };
   
   const handlePlanCreated = (newPlan) => {
     console.log('Plan creado:', newPlan);
-
-    // Cerrar modal después de crear el plan
     setModalCrearPlan(false);
   };
   
-  // Estado mejorado para nuevo plan
   const [nuevoPlan, setNuevoPlan] = useState({
     title: '',
     description: '',
@@ -191,55 +190,89 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
     }
   };
 
-// ─────────────────────────────────────────────────────────
-// Cargar datos del perfil desde Firestore (si existe)
-// ─────────────────────────────────────────────────────────
-useEffect(() => {
-  let mounted = true;
-  const fetchPerfil = async () => {
-    try {
-      if (!user?.uid) {
-        if (mounted) setPerfilData(null);
-        return;
+  // Contar notificaciones sin leer
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const notificationsRef = collection(db, 'notifications');
+    const q = query(
+      notificationsRef,
+      where('recipientId', '==', user.uid),
+      where('read', '==', false)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setUnreadCount(snapshot.size);
+    });
+
+    return () => unsubscribe();
+  }, [user?.uid]);
+
+  // Control del header con scroll
+  useEffect(() => {
+    const controlHeader = () => {
+      const currentScrollY = window.scrollY;
+
+      if (currentScrollY < 10) {
+        setIsHeaderVisible(true);
+      } else if (currentScrollY > lastScrollY && currentScrollY > 100) {
+        setIsHeaderVisible(false);
+      } else {
+        setIsHeaderVisible(true);
       }
-      const perfilRef = doc(db, "perfil", user.uid);
-      const perfilSnap = await getDoc(perfilRef);
-      if (mounted) {
-        if (perfilSnap && perfilSnap.exists()) {
-          setPerfilData(perfilSnap.data());
-        } else {
-          setPerfilData(null);
+
+      setLastScrollY(currentScrollY);
+    };
+
+    window.addEventListener('scroll', controlHeader);
+
+    return () => {
+      window.removeEventListener('scroll', controlHeader);
+    };
+  }, [lastScrollY]);
+
+  // Cargar datos del perfil desde Firestore
+  useEffect(() => {
+    let mounted = true;
+    const fetchPerfil = async () => {
+      try {
+        if (!user?.uid) {
+          if (mounted) setPerfilData(null);
+          return;
+        }
+        const perfilRef = doc(db, "perfil", user.uid);
+        const perfilSnap = await getDoc(perfilRef);
+        if (mounted) {
+          if (perfilSnap && perfilSnap.exists()) {
+            setPerfilData(perfilSnap.data());
+          } else {
+            setPerfilData(null);
+          }
+        }
+      } catch (error) {
+        console.error("Error obteniendo perfil:", error);
+      }
+    };
+
+    fetchPerfil();
+    return () => { mounted = false; };
+  }, [user?.uid]);
+
+  // Si no hay foto en Firestore, buscar en Storage
+  useEffect(() => {
+    const fetchFoto = async () => {
+      if (user?.uid && !perfilData?.fotoURL) {
+        try {
+          const fotoRef = ref(storage, `profile_pictures/${user.uid}`);
+          const url = await getDownloadURL(fotoRef);
+          setPerfilData((prev) => ({ ...prev, fotoURL: url }));
+        } catch (error) {
+          console.log("No se encontró foto en Storage:", error.message);
         }
       }
-    } catch (error) {
-      console.error("Error obteniendo perfil:", error);
-    }
-  };
-
-  fetchPerfil();
-
-  return () => {
-    mounted = false;
-  };
-}, [user?.uid]);
-
-// ─────────────────────────────────────────────────────────
-// Si no hay foto en Firestore, buscar en Storage
-// ─────────────────────────────────────────────────────────
-useEffect(() => {
-  const fetchFoto = async () => {
-    if (user?.uid && !perfilData?.fotoURL) {
-      try {
-        const fotoRef = ref(storage, `profile_pictures/${user.uid}`);
-        const url = await getDownloadURL(fotoRef);
-        setPerfilData((prev) => ({ ...prev, fotoURL: url }));
-      } catch (error) {
-        console.log("No se encontró foto en Storage:", error.message);
-      }
-    }
-  };
-  fetchFoto();
-}, [user?.uid, perfilData]);
+    };
+    fetchFoto();
+  }, [user?.uid, perfilData]);
 
   const formatDate = (dateValue) => {
     if (!dateValue) return 'No disponible';
@@ -277,21 +310,14 @@ useEffect(() => {
       const commentsRef = collection(db, 'planes', planId, 'comments');
       const q = query(commentsRef, orderBy('timestamp', 'desc'));
       
-      console.log('Cargando comentarios para plan:', planId);
-      
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        console.log('Snapshot recibido, docs:', snapshot.docs.length);
-        
         const comentariosData = snapshot.docs.map(doc => {
           const data = doc.data();
-          console.log('Comentario encontrado:', doc.id, data);
           return {
             id: doc.id,
             ...data
           };
         });
-        
-        console.log('Comentarios procesados:', comentariosData);
         
         setComentarios(prev => ({
           ...prev,
@@ -319,9 +345,6 @@ useEffect(() => {
     if (!texto.trim()) return;
 
     try {
-      console.log('Agregando comentario a planes:', planId);
-      console.log('Usuario actual:', user);
-      
       const commentsRef = collection(db, 'planes', planId, 'comments');
       
       const nuevoComentario = {
@@ -333,23 +356,33 @@ useEffect(() => {
         timestamp: new Date(),
       };
 
-      console.log('Datos del comentario:', nuevoComentario);
-
       const docRef = await addDoc(commentsRef, nuevoComentario);
-      console.log('Comentario agregado con ID:', docRef.id);
 
       const planRef = doc(db, 'planes', planId);
       const planActual = planes.find(p => p.id === planId);
       const nuevoConteo = (planActual.commentCount || 0) + 1;
-      
-      console.log('Actualizando contador de comentarios a:', nuevoConteo);
       
       await updateDoc(planRef, {
         commentCount: nuevoConteo,
         lastCommentAt: new Date()
       });
 
-      console.log('Comentario y contador actualizados exitosamente');
+      // ✅ Crear notificación de comentario
+    if (planActual.userId !== user.uid) {
+      const notificationRef = collection(db, 'notifications');
+      await addDoc(notificationRef, {
+        recipientId: planActual.userId,
+        senderId: user.uid,
+        senderName: user.displayName || user.email?.split('@')[0] || 'Alguien',
+        type: 'comment',
+        message: `${user.displayName || user.email?.split('@')[0] || 'Alguien'} comentó en tu plan`,
+        planTitle: planActual.title,
+        planId: planId,
+        commentText: texto.trim().substring(0, 50) + (texto.length > 50 ? '...' : ''),
+        read: false,
+       timestamp: new Date()  // ✅ Usa esto
+      });
+    }
 
     } catch (error) {
       console.error('Error detallado al agregar comentario:', error);
@@ -365,8 +398,6 @@ useEffect(() => {
   };
 
   const abrirModalComentarios = async (plan) => {
-    console.log('Abriendo modal para plan:', plan.id, plan.title);
-    
     setModalComentarios({
       isOpen: true,
       planId: plan.id,
@@ -390,220 +421,6 @@ useEffect(() => {
         delete nuevo[`unsubscribe_${modalComentarios.planId}`];
         return nuevo;
       });
-    }
-  };
-
-  // Eliminar imagen
-  const eliminarImagen = (index) => {
-    setNuevoPlan(prev => ({
-      ...prev,
-      imageUrls: prev.imageUrls.filter((_, i) => i !== index)
-    }));
-  };
-
-  // Obtener ubicación actual
-  const obtenerUbicacionActual = () => {
-    getLocation();
-  };
-
-  // Efecto para actualizar ubicación cuando se obtiene
-  useEffect(() => {
-    if (location) {
-      setNuevoPlan(prev => ({
-        ...prev,
-        latitude: location.latitude,
-        longitude: location.longitude
-      }));
-      
-      // Geocodificación inversa para obtener dirección
-      geocodificarUbicacion(location.latitude, location.longitude);
-    }
-  }, [location]);
-
-  // Geocodificación inversa
-  const geocodificarUbicacion = async (lat, lng) => {
-    try {
-      // Usando un servicio de geocodificación (ejemplo con OpenStreetMap Nominatim)
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        const address = data.display_name;
-        const city = data.address?.city || data.address?.town || data.address?.village || '';
-        const state = data.address?.state || '';
-        
-        setNuevoPlan(prev => ({
-          ...prev,
-          locationAddress: address,
-          city: city,
-          state: state,
-          location: address // También actualizar el campo location principal
-        }));
-      }
-    } catch (error) {
-      console.error('Error en geocodificación:', error);
-    }
-  };
-
-  // Validar formulario
-  const validarFormulario = () => {
-    const erroresTemp = {};
-    
-    if (!nuevoPlan.title.trim()) {
-      erroresTemp.title = 'El título es obligatorio';
-    }
-    
-    if (!nuevoPlan.description.trim()) {
-      erroresTemp.description = 'La descripción es obligatoria';
-    }
-    
-    if (!nuevoPlan.date) {
-      erroresTemp.date = 'La fecha es obligatoria';
-    }
-    
-    if (!nuevoPlan.time) {
-      erroresTemp.time = 'La hora es obligatoria';
-    }
-    
-    if (!nuevoPlan.location.trim()) {
-      erroresTemp.location = 'La ubicación es obligatoria';
-    }
-
-    if (nuevoPlan.enableWhatsapp && !nuevoPlan.phoneNumber.trim()) {
-      erroresTemp.phoneNumber = 'El número de teléfono es obligatorio si WhatsApp está habilitado';
-    }
-    
-    setErrores(erroresTemp);
-    return Object.keys(erroresTemp).length === 0;
-  };
-
-  // Función igual a la de móvil pero en JS
-  const uploadImagesToFirebase = async (imageFiles, userId, planId) => {
-    const urls = [];
-    for (let file of imageFiles) {
-      try {
-        const compressedBlob = await ImageUtils.compressImage(file);
-        const imageName = `${crypto.randomUUID()}.jpg`;
-        const storageRef = ref(storage, `planes/${userId}/${planId}/${imageName}`);
-        const snapshot = await uploadBytes(storageRef, compressedBlob);
-        const url = await getDownloadURL(snapshot.ref);
-        urls.push(url);
-      } catch (err) {
-        console.error("Error subiendo imagen:", err);
-      }
-    }
-    return urls;
-  };
-
-  // Crear plan (idéntico flujo a móvil)
-  const crearPlan = async (e) => {
-    e.preventDefault();
-    if (!validarFormulario()) return;
-    setCreandoPlan(true);
-
-    try {
-      const user = auth.currentUser;
-      if (!user) throw new Error("Usuario no autenticado");
-
-      // Generar ID igual que en la app móvil
-      const planId = uuidv4();
-
-      // Subir imágenes
-      const imagenesComprimidas = await uploadImagesToFirebase(
-        nuevoPlan.imageUrls,
-        user.uid,
-        planId
-      );
-
-      // Crear objeto plan
-      const planData = {
-        id: planId,
-        userId: user.uid,
-        createdAt: Date.now(),
-        title: nuevoPlan.title.trim(),
-        description: nuevoPlan.description.trim(),
-        date: new Date(`${nuevoPlan.date}T${nuevoPlan.timeString}`).getTime(),
-        timeString: nuevoPlan.timeString,
-        location: nuevoPlan.location.trim(),
-        latitude: nuevoPlan.latitude,
-        longitude: nuevoPlan.longitude,
-        locationAddress: nuevoPlan.locationAddress,
-        city: nuevoPlan.city,
-        state: nuevoPlan.state,
-        imageUrls: imagenesComprimidas,
-        enableWhatsapp: nuevoPlan.enableWhatsapp,
-        phoneNumber: nuevoPlan.enableWhatsapp ? nuevoPlan.phoneNumber.trim() : "",
-        likes: [],
-        participants: [],
-        commentCount: 0,
-        shares: 0,
-      };
-
-      // Guardar con el mismo ID
-      await setDoc(doc(db, "planes", planId), planData);
-
-      console.log("Plan creado con ID:", planId);
-      alert("¡Plan creado exitosamente!");
-
-      setNuevoPlan({
-        title: '',
-        description: '',
-        category: '',
-        date: '',
-        time: '',
-        location: '',
-        locationAddress: '',
-        city: '',
-        state: '',
-        latitude: null,
-        longitude: null,
-        imageUrls: [],
-        enableWhatsapp: false,
-        phoneNumber: ''
-      });
-      setErrores({});
-      setModalCrearPlan(false);
-    } catch (error) {
-      console.error("Error al crear plan:", error);
-      setErrores({ general: "Error al crear el plan. Inténtalo nuevamente." });
-    } finally {
-      setCreandoPlan(false);
-    }
-  };
-
-  // FUNCIÓN MEJORADA PARA MANEJAR IMÁGENES
-  const manejarImagenes = async (files) => {
-    if (!files || files.length === 0) return;
-
-    try {
-      // Aquí NO subimos todavía, solo guardamos los File
-      const nuevasImagenes = Array.from(files).filter(
-        (file) => file.type.startsWith("image/") && file.size <= 10 * 1024 * 1024
-      );
-
-      // Guardamos los files en el estado (para subirlos después en crearPlan)
-      setNuevoPlan((prev) => ({
-        ...prev,
-        imageUrls: [...prev.imageUrls, ...nuevasImagenes].slice(0, 5),
-      }));
-    } catch (error) {
-      console.error("Error procesando imágenes:", error);
-      setErrores((prev) => ({
-        ...prev,
-        imagenes: "Error al procesar las imágenes",
-      }));
-    }
-  };
-
-  // Abrir en Google Maps
-  const abrirEnGoogleMaps = () => {
-    if (nuevoPlan.location.trim()) {
-      const encodedLocation = encodeURIComponent(nuevoPlan.location);
-      window.open(`https://maps.google.com/maps?q=${encodedLocation}`, '_blank');
-    } else {
-      alert('Primero escribe una dirección');
     }
   };
 
@@ -643,318 +460,332 @@ useEffect(() => {
     });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
-      {/* HEADER RESPONSIVO */}
-      <header className="bg-gradient-to-b from-black/80 to-transparent text-white top-0 z-50 shadow-xl sticky">
-        <div className="flex items-center justify-between px-3 sm:px-4 lg:px-6 py-3 sm:py-4">
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-purple-900 relative overflow-hidden">
+      {/* Elementos decorativos de fondo */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-pink-400/20 to-purple-600/20 rounded-full blur-3xl"></div>
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-tr from-blue-400/20 to-indigo-600/20 rounded-full blur-3xl"></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gradient-to-r from-purple-400/10 to-pink-400/10 rounded-full blur-3xl"></div>
+      </div>
+
+      {/* HEADER MODERNO CON SCROLL */}
+      <header className={`fixed top-0 left-0 right-0 z-50 bg-white/10 backdrop-blur-xl border-b border-white/20 shadow-2xl transition-transform duration-300 ${
+        isHeaderVisible && !modalCrearPlan ? 'translate-y-0' : '-translate-y-full'
+      }`}>
+        <div className="flex items-center justify-between px-4 lg:px-8 py-4">
           
-          {/* Logo y nombre */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-shrink-0">
-            <img src={logoSinde} alt="Logo" className="h-8 w-8 sm:h-10 sm:w-10 lg:h-12 lg:w-12 flex-shrink-0" />
+          {/* Logo y nombre con efecto glassmorphism */}
+          <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
+            <div className="relative">
+              <img src={logoSinde} alt="Logo" className="h-12 w-12 lg:h-14 lg:w-14 rounded-2xl shadow-2xl" />
+              <div className="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-r from-pink-500 to-purple-500 rounded-full animate-pulse"></div>
+            </div>
             <div className="hidden sm:block min-w-0">
-              <h1 className="text-sm sm:text-lg lg:text-xl font-bold truncate">SindesParches</h1>
-              <p className="text-xs text-gray-300 hidden lg:block">¡Encuentra tu parche perfecto!</p>
+              <h1 className="text-xl lg:text-2xl font-black text-white bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
+                SindesParches
+              </h1>
+              <p className="text-sm text-white/70 font-medium">¡Encuentra tu parche perfecto!</p>
             </div>
           </div>
 
-          {/* Barra de búsqueda centrada - Solo desktop */}
+          {/* Barra de búsqueda centrada con glassmorphism */}
           <div className="hidden lg:flex flex-1 justify-center px-8 max-w-2xl mx-auto">
-            <div className="relative w-full">
+            <div className="relative w-full group">
               <input
                 type="text"
-                placeholder="¿Qué parche buscas hoy?"
+                placeholder="¿Qué parche épico buscas hoy? ✨"
                 value={busqueda}
                 onChange={(e) => setBusqueda(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-white/90 backdrop-blur-sm border border-white/20 rounded-full shadow-lg focus:ring-2 focus:ring-pink-500 focus:outline-none transition-all duration-300 text-gray-800 placeholder:text-gray-500 text-sm"
+                className="w-full pl-12 pr-6 py-4 bg-white/20 backdrop-blur-xl border border-white/30 rounded-2xl shadow-2xl focus:ring-4 focus:ring-pink-500/50 focus:outline-none focus:bg-white/30 transition-all duration-300 text-white placeholder:text-white/70 text-sm font-medium"
               />
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70 group-focus-within:text-pink-400 transition-colors">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                <div className="w-8 h-8 bg-gradient-to-r from-pink-500 to-purple-500 rounded-full flex items-center justify-center">
+                  <Zap className="w-4 h-4 text-white" />
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Información del usuario y acciones */}
-          <div className="flex items-center gap-1 sm:gap-2 lg:gap-3">
+          {/* Información del usuario con diseño moderno */}
+          <div className="flex items-center gap-3 lg:gap-4">
+            {/* Info del usuario con glassmorphism */}
+            <button
+              onClick={onShowPerfil}
+              className="hidden xl:flex items-center gap-4 bg-white/10 backdrop-blur-xl rounded-2xl p-3 hover:bg-white/20 transition-all duration-300 group"
+            >
+              <div className="text-right min-w-0">
+                <p className="text-sm font-bold text-white group-hover:text-pink-300 transition-colors">
+                  {perfilData?.nombre || user?.displayName || user?.email?.split('@')[0] || 'Usuario'}
+                </p>
+                <p className="text-xs text-white/60">{user?.email}</p>
+              </div>
 
-           {/* Info del usuario clickeable (reemplaza botón perfil) */}
-              <button
-                onClick={onShowPerfil}
-                className="hidden xl:flex items-center gap-3 mr-4 cursor-pointer hover:opacity-90 transition"
-              >
-                <div className="text-right min-w-0">
-                  <p className="text-sm font-semibold truncate">
-                    {perfilData?.nombre || user?.displayName || user?.email?.split('@')[0] || 'Usuario'}
-                  </p>
-                  <p className="text-xs text-gray-300 truncate">{user?.email}</p>
-                </div>
-
-                {/* Avatar del usuario */}
+              <div className="relative">
                 {perfilData?.fotoURL ? (
                   <img
                     src={perfilData.fotoURL}
                     alt="Avatar"
-                    className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover flex-shrink-0"
+                    className="w-12 h-12 rounded-2xl object-cover ring-2 ring-white/30 group-hover:ring-pink-400/50 transition-all duration-300"
                   />
                 ) : (
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                  <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-purple-600 rounded-2xl flex items-center justify-center text-white font-bold text-lg ring-2 ring-white/30 group-hover:ring-pink-400/50 transition-all duration-300">
                     {(perfilData?.nombre?.charAt(0) ||
                       user?.displayName?.charAt(0) ||
                       user?.email?.charAt(0) ||
                       'U').toUpperCase()}
                   </div>
                 )}
-              </button>
+                <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
+                  <Star className="w-3 h-3 text-white" />
+                </div>
+              </div>
+            </button>
 
-            {/* Botones de acción */}
-            <div className="flex gap-1 sm:gap-2 items-center">
-              {/* Perfil - Oculto en móvil extra pequeño */}
+            {/* Botones de acción modernos */}
+            <div className="flex gap-2 items-center">
               <button
-            
                 title="Mi Perfil"
-                className="bg-white/20 hover:bg-white/30 backdrop-blur-sm p-2 sm:p-2.5 lg:p-3 rounded-full transition-all duration-200 hover:scale-110 hidden xs:block"
+                className="bg-white/10 backdrop-blur-xl hover:bg-white/20 p-3 rounded-2xl transition-all duration-300 hover:scale-110 hidden xs:block group"
                 onClick={onShowPerfil}
               >
-                <User className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                <User className="w-5 h-5 text-white group-hover:text-pink-400 transition-colors" />
               </button>
-              {/* Notificaciones */}
+              
               <button
                 title="Notificaciones"
-                className="bg-white/20 hover:bg-white/30 backdrop-blur-sm p-2 sm:p-2.5 lg:p-3 rounded-full transition-all duration-200 hover:scale-110 relative"
+                className="bg-white/10 backdrop-blur-xl hover:bg-white/20 p-3 rounded-2xl transition-all duration-300 hover:scale-110 relative group"
                 onClick={() => setShowNotifications(!showNotifications)}
               >
-                <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-red-500 rounded-full animate-pulse"></span>
-              
+                <Bell className="w-5 h-5 text-white group-hover:text-pink-400 transition-colors" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-gradient-to-r from-pink-500 to-red-500 rounded-full animate-bounce flex items-center justify-center">
+                    <span className="text-xs text-white font-bold">{unreadCount}</span>
+                  </span>
+                )}
               </button>
 
-              {/* Configuración */}
               <button
                 title="Menu"
-                className="bg-white/20 hover:bg-white/30 backdrop-blur-sm p-2 sm:p-2.5 lg:p-3 rounded-full transition-all duration-200 hover:scale-110"
+                className="bg-white/10 backdrop-blur-xl hover:bg-white/20 p-3 rounded-2xl transition-all duration-300 hover:scale-110 group"
                 onClick={() => setMenuOpen(!menuOpen)}
-             >
-              {menuOpen ? (
-                <X className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-              ) : (
-                <Menu className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-              )}
-            </button>
+              >
+                {menuOpen ? (
+                  <X className="w-5 h-5 text-white group-hover:text-pink-400 transition-colors" />
+                ) : (
+                  <Menu className="w-5 h-5 text-white group-hover:text-pink-400 transition-colors" />
+                )}
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Barra de búsqueda móvil */}
-        <div className="lg:hidden px-3 sm:px-4 pb-3 sm:pb-4">
-          <div className="relative">
+        {/* Barra de búsqueda móvil moderna */}
+        <div className="lg:hidden px-4 pb-4">
+          <div className="relative group">
             <input
               type="text"
-              placeholder="Buscar parches..."
+              placeholder="Buscar parches épicos..."
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 bg-white/90 backdrop-blur-sm rounded-full text-gray-800 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-pink-500 text-sm"
+              className="w-full pl-12 pr-4 py-3 bg-white/20 backdrop-blur-xl rounded-2xl text-white placeholder:text-white/70 focus:outline-none focus:ring-4 focus:ring-pink-500/50 text-sm font-medium border border-white/30"
             />
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70">
+              <Sparkles className="w-4 h-4" />
             </div>
           </div>
         </div>
       </header>
 
-  {/* MENU DESPLEGABLE RESPONSIVO */}
-{menuOpen && (
-  <div
-    className="fixed inset-0 bg-black/50 z-50 flex justify-end"
-    onClick={() => setMenuOpen(false)}
-  >
-    <div
-      className="bg-white w-72 sm:w-80 h-full shadow-2xl transform transition-transform duration-300 ease-out overflow-y-auto"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="p-4 sm:p-6 border-b border-gray-200">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base sm:text-lg font-bold text-gray-900">
-            Mi Cuenta
-          </h3>
-          <button
-            onClick={() => setMenuOpen(false)}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-          >
-            <X className="w-5 h-5 text-gray-500" />
-          </button>
-        </div>
+      {/* MENU LATERAL MODERNO */}
+      {menuOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-end" onClick={() => setMenuOpen(false)}>
+          <div className="bg-white/10 backdrop-blur-2xl w-80 h-full shadow-2xl transform transition-transform duration-500 ease-out border-l border-white/20" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-white/20">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-white">Mi Cuenta</h3>
+                <button onClick={() => setMenuOpen(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+                  <X className="w-6 h-6 text-white" />
+                </button>
+              </div>
 
-        {/* Avatar + Nombre + Correo */}
-        <div className="mt-4 flex items-center gap-3">
-          {perfilData?.fotoURL ? (
-            <img
-              src={perfilData.fotoURL}
-              alt="Avatar"
-              className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover flex-shrink-0"
-            />
-          ) : (
-            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-              {(perfilData?.nombre?.charAt(0) ||
-                user?.displayName?.charAt(0) ||
-                user?.email?.charAt(0) ||
-                "U").toUpperCase()}
+              <div className="flex items-center gap-4 bg-white/10 backdrop-blur-xl rounded-2xl p-4">
+                {perfilData?.fotoURL ? (
+                  <img src={perfilData.fotoURL} alt="Avatar" className="w-16 h-16 rounded-2xl object-cover" />
+                ) : (
+                  <div className="w-16 h-16 bg-gradient-to-br from-pink-500 to-purple-600 rounded-2xl flex items-center justify-center text-white font-bold text-xl">
+                    {(perfilData?.nombre?.charAt(0) || user?.displayName?.charAt(0) || user?.email?.charAt(0) || "U").toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-white text-lg">{perfilData?.nombre || user?.displayName || user?.email?.split("@")[0] || "Usuario"}</p>
+                  <p className="text-white/60 text-sm">{user?.email}</p>
+                </div>
+              </div>
             </div>
-          )}
-          <div className="min-w-0 flex-1">
-            <p className="font-semibold text-gray-900 text-sm sm:text-base truncate">
-              {perfilData?.nombre ||
-                user?.displayName ||
-                user?.email?.split("@")[0] ||
-                "Usuario"}
-            </p>
-            <p className="text-xs sm:text-sm text-gray-500 truncate">
-              {user?.email}
-            </p>
+
+            <div className="p-6">
+              <nav className="space-y-3">
+                {[
+                  { icon: User, label: "Mi Perfil", action: onShowPerfil },
+                  { icon: Bell, label: "Notificaciones", action: () => setShowNotifications(true) },
+                  { icon: Settings, label: "Configuración", action: () => {} }
+                ].map((item, index) => (
+                  <button
+                    key={index}
+                    onClick={item.action}
+                    className="w-full flex items-center gap-4 text-left p-4 hover:bg-white/10 rounded-2xl transition-all duration-300 group"
+                  >
+                    <item.icon className="w-6 h-6 text-white/70 group-hover:text-pink-400 transition-colors" />
+                    <span className="text-white group-hover:text-pink-400 transition-colors font-medium">{item.label}</span>
+                  </button>
+                ))}
+
+                <div className="border-t border-white/20 pt-4 mt-6">
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-4 text-left p-4 hover:bg-red-500/20 rounded-2xl transition-all duration-300 text-red-400 hover:text-red-300 group"
+                  >
+                    <LogOut className="w-6 h-6" />
+                    <span className="font-bold">Cerrar Sesión</span>
+                  </button>
+                </div>
+              </nav>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Opciones del menú */}
-      <div className="p-4 sm:p-6">
-        <nav className="space-y-3 sm:space-y-4">
-          <button
-            onClick={onShowPerfil}
-            className="w-full flex items-center gap-3 text-left p-3 hover:bg-gray-50 rounded-lg transition-colors"
-          >
-            <User className="w-5 h-5 text-gray-500" />
-            <span className="text-gray-700 text-sm sm:text-base">
-              Mi Perfil
-            </span>
-          </button>
-
-          <button className="w-full flex items-center gap-3 text-left p-3 hover:bg-gray-50 rounded-lg transition-colors">
-            <Bell className="w-5 h-5 text-gray-500" />
-            <span className="text-gray-700 text-sm sm:text-base">
-              Notificaciones
-            </span>
-          </button>
-
-          <button className="w-full flex items-center gap-3 text-left p-3 hover:bg-gray-50 rounded-lg transition-colors">
-            <Settings className="w-5 h-5 text-gray-500" />
-            <span className="text-gray-700 text-sm sm:text-base">
-              Configuración
-            </span>
-          </button>
-
-          <div className="border-t border-gray-200 pt-4">
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center gap-3 text-left p-3 hover:bg-red-50 rounded-lg transition-colors text-red-600 hover:text-red-700"
+      <main className="relative z-10 max-w-7xl mx-auto px-4 lg:px-8 py-8" style={{ paddingTop: '180px' }}> 
+        {/* Botón crear plan - versión original que se oculta al hacer scroll */}
+        <div className={`text-center mb-12 transition-opacity duration-300 ${
+          isHeaderVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}>
+          <div className="relative inline-block group">
+            <div className="absolute -inset-1 bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 rounded-2xl blur opacity-75 group-hover:opacity-100 transition duration-300 animate-pulse"></div>
+            <button 
+              onClick={() => setModalCrearPlan(true)}
+              className="relative bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 text-white px-8 py-4 rounded-2xl font-black text-lg shadow-2xl hover:shadow-pink-500/25 transform hover:scale-105 transition-all duration-300 flex items-center gap-3 mx-auto group overflow-hidden"
             >
-              <LogOut className="w-5 h-5" />
-              <span className="font-medium text-sm sm:text-base">
-                Cerrar Sesión
-              </span>
+              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/30 to-white/0 -skew-x-12 transform translate-x-full group-hover:translate-x-[-200%] transition-transform duration-1000"></div>
+              <div className="relative flex items-center gap-3">
+                <div className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center group-hover:rotate-180 transition-transform duration-500">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <span className="text-lg font-black">¡Crear Plan Épico!</span>
+                <div className="text-2xl animate-bounce">🚀</div>
+              </div>
             </button>
           </div>
-        </nav>
-      </div>
-    </div>
-  </div>
-)}
+        </div>
 
-
-      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 lg:py-8">
-
-        {/* Botón crear plan mejorado y responsivo - CORREGIDO */}
-        {/* Botón crear plan mejorado y responsivo (el resto de tu main lo mantuve intacto) */}
-        <div className="text-center mb-8 sm:mb-10 lg:mb-12">
-          <div className="relative">
-            <div>
-              <button 
-                onClick={() => setModalCrearPlan(true)}
-                className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 hover:from-pink-600 hover:via-purple-600 hover:to-indigo-600 text-white px-6 sm:px-8 lg:px-10 py-3 sm:py-4 rounded-full font-bold text-sm sm:text-base lg:text-lg shadow-2xl hover:shadow-3xl transform hover:scale-105 transition-all duration-300 flex items-center gap-2 sm:gap-3 mx-auto relative overflow-hidden"
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -skew-x-12 transform translate-x-full group-hover:translate-x-[-200%] transition-transform duration-1000"></div>
-                <Plus className="w-5 h-5 sm:w-6 sm:h-6" />
-                <span className="hidden sm:inline">¡Crear Plan Increíble!</span>
-                <span className="sm:hidden">Crear el mejor plan Plan</span>
-                <span className="text-xl sm:text-2xl">✨</span>
-              </button>
-
-              {/* Modal PlanModal - CORREGIDO */}
-              <PlanModal 
-                isOpen={modalCrearPlan}
-                onClose={() => setModalCrearPlan(false)}
-                onPlanCreated={handlePlanCreated}
-              />
-            </div>
-            <p className="text-white/80 mt-2 text-xs sm:text-sm">Comparte tu idea y encuentra compañeros de aventura</p>
+        {/* Botón flotante compacto - aparece al hacer scroll */}
+        <div className={`fixed bottom-8 right-8 z-50 transition-all duration-300 ${
+          !isHeaderVisible && !modalCrearPlan ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0 pointer-events-none'
+        }`}>
+          <div className="relative group">
+            <div className="absolute -inset-1 bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 rounded-full blur opacity-75 group-hover:opacity-100 transition duration-300 animate-pulse"></div>
+            <button 
+              onClick={() => setModalCrearPlan(true)}
+              className="relative bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 text-white p-5 rounded-full font-black shadow-2xl hover:shadow-pink-500/25 transform hover:scale-110 transition-all duration-300 group overflow-hidden"
+              title="Crear Plan Épico"
+            >
+              <Plus className="w-6 h-6" />
+            </button>
           </div>
         </div>
 
+        {/* Modal */}
+        <PlanModal 
+          isOpen={modalCrearPlan}
+          onClose={() => setModalCrearPlan(false)}
+          onPlanCreated={handlePlanCreated}
+        />
+
+          {/* SECCIÓN DE FLASH PLANS MEJORADA */}
+          <div className="mb-16">
+            <FlashPlansSection />
+          </div>
        
-        <section className="mt-8 sm:mt-10 lg:mt-12">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 sm:mb-8 gap-4">
-            <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-white flex items-center gap-2 sm:gap-3">
-              <span className="text-lg sm:text-xl lg:text-2xl">🎉</span>
-              <span>Planes Disponibles</span>
-              <span className="bg-pink-500 text-white text-xs sm:text-sm px-2 sm:px-3 py-1 rounded-full">
-                {planesFiltrados.length}
-              </span>
-            </h2>
+        {/* SECCIÓN DE PLANES CON DISEÑO MODERNO */}
+        <section>
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-12 gap-6">
+           <div className="relative">
+  {/* Línea decorativa superior */}
+  <div className="absolute top-0 left-0 w-32 h-1 bg-gradient-to-r from-pink-500 to-purple-500 rounded-full"></div>
+  
+  <div className="pt-6 pb-4">
+    <div className="flex items-center gap-4 mb-3">
+      <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+        <Zap className="w-6 h-6 text-white" />
+      </div>
+      <h2 className="text-4xl font-black text-white">
+        Planes Épicos
+      </h2>
+    </div>
+    <p className="text-white/70 text-base pl-16">
+      Descubre aventuras increíbles cerca de ti
+    </p>
+  </div>
+  
+  {/* Línea decorativa inferior */}
+  <div className="w-full h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+</div>
             
             {busqueda && (
-              <div className="flex items-center gap-2 text-white/80 text-sm">
-                <span className="hidden sm:inline">Buscando:</span>
-                <span className="bg-white/20 px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm">
+              <div className="flex items-center gap-3 bg-white/10 backdrop-blur-xl rounded-2xl px-6 py-3">
+                <span className="text-white/80 font-medium">Buscando:</span>
+                <span className="bg-gradient-to-r from-pink-500 to-purple-500 text-white px-4 py-2 rounded-xl font-bold">
                   "{busqueda}"
                 </span>
-                <button
-                  onClick={() => setBusqueda('')}
-                  className="text-white/60 hover:text-white p-1"
-                >
-                  <X className="w-4 h-4" />
+                <button onClick={() => setBusqueda('')} className="text-white/60 hover:text-white p-1">
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             )}
           </div>
 
           {planesFiltrados.length === 0 ? (
-            <div className="text-center py-12 sm:py-16 px-4">
-              <div className="text-4xl sm:text-5xl lg:text-6xl mb-4">😔</div>
-              <h3 className="text-lg sm:text-xl font-semibold text-white mb-2">
-                {busqueda ? 'No encontramos planes con esa búsqueda' : 'No hay planes disponibles'}
-              </h3>
-              <p className="text-white/70 mb-6 sm:mb-8 text-sm sm:text-base max-w-md mx-auto">
-                {busqueda ? 'Intenta con otros términos o crea tu propio plan' : '¡Sé el primero en crear un plan increíble!'}
-              </p>
-              <button
-                onClick={() => setModalCrearPlan(true)}
-                className="bg-gradient-to-r from-pink-500 to-purple-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-full font-semibold hover:scale-105 transition-transform text-sm sm:text-base"
-              >
-                <span className="hidden sm:inline">Crear el Primer Plan 🚀</span>
-                <span className="sm:hidden">Crear el mejor Plan 🚀</span>
-              </button>
+            <div className="text-center py-20 px-4">
+              <div className="text-8xl mb-6">😔</div>
+              <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-12 max-w-2xl mx-auto border border-white/20">
+                <h3 className="text-3xl font-black text-white mb-4">
+                  {busqueda ? 'No encontramos planes con esa búsqueda' : 'No hay planes disponibles'}
+                </h3>
+                <p className="text-white/70 mb-8 text-lg">
+                  {busqueda ? 'Intenta con otros términos o crea tu propio plan épico' : '¡Sé el primero en crear un plan increíble!'}
+                </p>
+                <button
+                  onClick={() => setModalCrearPlan(true)}
+                  className="bg-gradient-to-r from-pink-500 to-purple-600 text-white px-8 py-4 rounded-2xl font-bold hover:scale-105 transition-transform text-lg shadow-2xl"
+                >
+                  Crear el Primer Plan 🚀
+                </button>
+              </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
               {planesFiltrados.map((plan) => {
                 const uniqueImages = [...new Set(plan.imageUrls || [])];
-                const comentariosPlan = comentarios[plan.id] || [];
-                const ultimoComentario = ultimosComentarios[plan.id];
 
                 return (
                   <div
                     key={plan.id}
-                    className="bg-white/95 backdrop-blur-sm p-4 sm:p-5 lg:p-6 rounded-xl sm:rounded-2xl shadow-xl border border-white/20 hover:shadow-2xl transition-all duration-300 hover:scale-105 group"
+                    className="group relative bg-white/20 backdrop-blur-xl p-6 rounded-3xl shadow-2xl border border-white/20 hover:bg-white/30 transition-all duration-500 hover:scale-105 hover:shadow-pink-500/25 overflow-hidden"
                   >
-                    {/* Imágenes del plan */}
+                    {/* Efecto de brillo en hover */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-pink-500/0 via-purple-500/10 to-pink-500/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                    
+                    {/* Imágenes del plan con diseño moderno */}
                     {uniqueImages.length > 0 && (
-                      <div className="w-full h-48 sm:h-56 lg:h-64 mb-4 sm:mb-6 rounded-lg sm:rounded-xl overflow-hidden">
+                      <div className="relative w-full h-64 mb-6 rounded-2xl overflow-hidden shadow-2xl">
                         {uniqueImages.length === 1 ? (
                           <img
                             src={uniqueImages[0]}
                             alt={plan.title}
-                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                           />
                         ) : (
                           <Slider
@@ -972,159 +803,180 @@ useEffect(() => {
                                 <img
                                   src={url}
                                   alt={`Imagen ${index + 1}`}
-                                  className="w-full h-48 sm:h-56 lg:h-64 object-cover"
+                                  className="w-full h-64 object-cover"
                                 />
                               </div>
                             ))}
                           </Slider>
                         )}
+                        
+                        {/* Overlay con gradiente */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent"></div>
                       </div>
                     )}
 
-                    {/* Contenido del plan detallado */}
-                    <div className="space-y-3 sm:space-y-4">
-                      <h3 className="text-lg sm:text-xl font-bold text-gray-900 group-hover:text-purple-600 transition-colors line-clamp-2">
+                    {/* Contenido del plan con diseño moderno */}
+                    <div className="relative z-10 space-y-4">
+                      <h3 className="text-2xl font-black text-white group-hover:text-pink-300 transition-colors line-clamp-2">
                         {plan.title}
                       </h3>
                       
-                      <p className="text-gray-600 line-clamp-3 leading-relaxed text-sm sm:text-base">
+                      <p className="text-white/80 line-clamp-3 leading-relaxed">
                         {plan.description}
                       </p>
                       
-                      {/* Información de fecha, hora y ubicación */}
-                      <div className="space-y-2">
+                      {/* Información con iconos modernos */}
+                      <div className="space-y-3">
                         {plan.date && (
-                          <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-500">
-                            <Calendar className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                            <span className="truncate">{formatDate(plan.date)}</span>
-                            {plan.time && <span className="hidden sm:inline">• {plan.time}</span>}
+                          <div className="flex items-center gap-3 text-white/70 bg-white/5 rounded-xl p-3">
+                            <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center">
+                              <Calendar className="w-4 h-4 text-white" />
+                            </div>
+                            <span className="font-medium">{formatDate(plan.date)}</span>
                           </div>
                         )}
 
                         {plan.location && (
-                          <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-500">
-                            <MapPin className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                            <span className="truncate">{plan.location}</span>
+                          <div className="flex items-center gap-3 text-white/70 bg-white/5 rounded-xl p-3">
+                            <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl flex items-center justify-center">
+                              <MapPin className="w-4 h-4 text-white" />
+                            </div>
+                            <span className="font-medium truncate">{plan.location}</span>
                           </div>
                         )}
-
-                        {plan.city && (
-                          <div className="text-xs text-gray-400 truncate">
-                            📍 {plan.city}{plan.state && `, ${plan.state}`}
-                          </div>
-                        )}
-
-                       
                       </div>
 
+                      {/* Botón de ver plan moderno */}
                       <button
-                      onClick={() => abrirModalPlanDetails(plan)} // Cambiar esta línea
-                      className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white px-4 py-2.5 rounded-lg font-medium transition-all duration-200 hover:scale-105"
-                    >
-                      <Eye className="w-4 h-4" />
-                      <span>Ver Plan</span>
-                    </button>
-
-                      {/* Acciones del plan */}
-                  <div className="flex items-center justify-between pt-3 sm:pt-4 border-t border-gray-100">
-                    <div className="flex items-center gap-2 sm:gap-3">
-                      {/* Like */}
-                      <button
-                        onClick={async () => {
-                          const planRef = doc(db, 'planes', plan.id);
-                          const yaDioLike = plan.likes?.includes(user.uid);
-                          await updateDoc(planRef, {
-                            likes: yaDioLike
-                              ? arrayRemove(user.uid)
-                              : arrayUnion(user.uid),
-                          });
-                        }}
-                        className="flex items-center gap-1 text-red-500 hover:scale-110 transition-all duration-200 p-1"
+                        onClick={() => abrirModalPlanDetails(plan)}
+                        className="w-full flex items-center justify-center gap-3 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white px-6 py-4 rounded-2xl font-bold transition-all duration-300 hover:scale-105 shadow-2xl"
                       >
-                        <Heart
-                          size={16}
-                          className="sm:w-5 sm:h-5"
-                          fill={plan.likes?.includes(user.uid) ? 'red' : 'none'}
-                          stroke={plan.likes?.includes(user.uid) ? 'red' : 'currentColor'}
-                        />
-                        <span className="text-xs sm:text-sm font-medium">
-                          {plan.likes?.length || 0}
-                        </span>
+                        <Eye className="w-5 h-5" />
+                        <span>Ver Plan Épico</span>
+                        <Sparkles className="w-5 h-5" />
                       </button>
 
-                      {/* Participar */}
-                      <button
-                        onClick={async () => {
-                          const planRef = doc(db, 'planes', plan.id);
-                          const yaParticipa = plan.participants?.includes(user.uid);
-                          await updateDoc(planRef, {
-                            participants: yaParticipa
-                              ? arrayRemove(user.uid)
-                              : arrayUnion(user.uid),
-                          });
-                        }}
-                        className={`flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-2 rounded-full text-xs sm:text-sm font-medium transition-all duration-200 ${
-                          plan.participants?.includes(user.uid)
-                            ? 'bg-green-500 text-white shadow-lg'
-                            : 'bg-gray-100 text-gray-600 hover:bg-green-500 hover:text-white'
-                        }`}
-                      >
-                        <Check className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span>{plan.participants?.length || 0}</span>
-                      </button>
-                    </div>
+                      {/* Acciones del plan con diseño moderno */}
+                      <div className="flex items-center justify-between pt-4 border-t border-white/20">
+                        <div className="flex items-center gap-3">
+                          {/* Like con animación */}
+                          <button
+                            onClick={async () => {
+                              const planRef = doc(db, 'planes', plan.id);
+                              const yaDioLike = plan.likes?.includes(user.uid);
+                              
+                              await updateDoc(planRef, {
+                                likes: yaDioLike ? arrayRemove(user.uid) : arrayUnion(user.uid),
+                              });
 
-                    {/* WhatsApp + Compartir */}
-                    <div className="flex items-center gap-2 sm:gap-3">
+                              // Crear notificación solo si da like (no si quita el like)
+                              if (!yaDioLike && plan.userId !== user.uid) {
+                                const notificationRef = collection(db, 'notifications');
+                                await addDoc(notificationRef, {
+                                  recipientId: plan.userId,
+                                  senderId: user.uid,
+                                  senderName: user.displayName || user.email?.split('@')[0] || 'Alguien',
+                                  type: 'like',
+                                  message: `${user.displayName || user.email?.split('@')[0] || 'Alguien'} le dio like a tu plan`,
+                                  planTitle: plan.title,
+                                  planId: plan.id,
+                                  read: false,
+                                 timestamp: new Date()  // ✅ Usa esto
+                                });
+                              }
+                            }}
+                            className="flex items-center gap-2 bg-white/10 backdrop-blur-xl hover:bg-red-500/20 px-4 py-2 rounded-xl transition-all duration-300 hover:scale-110 group"
+                          >
+                            <Heart
+                              className={`w-5 h-5 transition-all duration-300 ${
+                                plan.likes?.includes(user.uid) 
+                                  ? 'fill-red-500 text-red-500 scale-110' 
+                                  : 'text-white/70 group-hover:text-red-400'
+                              }`}
+                            />
+                            <span className="text-white font-bold">{plan.likes?.length || 0}</span>
+                          </button>
 
-                       {/* WhatsApp contact */}
-                        {plan.enableWhatsapp && plan.phoneNumber && (
-                          <div className="mt-2">
+                          {/* Participar con animación */}
+                          <button
+                            onClick={async () => {
+                              const planRef = doc(db, 'planes', plan.id);
+                              const yaParticipa = plan.participants?.includes(user.uid);
+                              
+                              await updateDoc(planRef, {
+                                participants: yaParticipa ? arrayRemove(user.uid) : arrayUnion(user.uid),
+                              });
+
+                              // Crear notificación solo si se une (no si se sale)
+                              if (!yaParticipa && plan.userId !== user.uid) {
+                                const notificationRef = collection(db, 'notifications');
+                                await addDoc(notificationRef, {
+                                  recipientId: plan.userId,
+                                  senderId: user.uid,
+                                  senderName: user.displayName || user.email?.split('@')[0] || 'Alguien',
+                                  type: 'participant',
+                                  message: `${user.displayName || user.email?.split('@')[0] || 'Alguien'} quiere participar en tu plan`,
+                                  planTitle: plan.title,
+                                  planId: plan.id,
+                                  read: false,
+                                 timestamp: new Date()  // ✅ Usa esto
+                                });
+                              }
+                            }}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all duration-300 hover:scale-110 ${
+                              plan.participants?.includes(user.uid)
+                                ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-xl'
+                                : 'bg-white/10 backdrop-blur-xl text-white/70 hover:bg-green-500/20 hover:text-green-400'
+                            }`}
+                          >
+                            <Check className="w-5 h-5" />
+                            <span>{plan.participants?.length || 0}</span>
+                          </button>
+                        </div>
+
+                        {/* WhatsApp y Compartir modernos */}
+                        <div className="flex items-center gap-2">
+                          {plan.enableWhatsapp && plan.phoneNumber && (
                             <a
                               href={`https://wa.me/${plan.phoneNumber.replace(/\D/g, '')}?text=Hola! Vi tu plan "${plan.title}" en SindesParches y me interesa participar.`}
                               target="_blank"
                               rel="noopener noreferrer"
-                               className="flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-2 bg-green-500 hover:bg-green-600 text-white text-xs sm:text-sm rounded-full transition-colors duration-200"
-                      >
-                              <Phone className="w-3 h-3 sm:w-4 sm:h-4" />
-                              <span className="hidden xs:inline">WhatsApp</span>
-                              <span className="xs:hidden">WhatsApp</span>
+                              className="w-10 h-10 bg-green-500 hover:bg-green-600 rounded-xl flex items-center justify-center transition-all duration-300 hover:scale-110 shadow-xl"
+                            >
+                              <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.515"/>
+                              </svg>
                             </a>
+                          )}
+                          
+                          <button
+                            onClick={() =>
+                              navigator.share?.({
+                                title: plan.title,
+                                text: plan.description,
+                                url: window.location.href,
+                              }) || alert('Función de compartir no disponible')
+                            }
+                            className="w-10 h-10 bg-blue-500 hover:bg-blue-600 rounded-xl flex items-center justify-center transition-all duration-300 hover:scale-110 shadow-xl"
+                          >
+                            <Share2 className="w-5 h-5 text-white" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Comentarios modernos */}
+                      <div className="pt-3">
+                        <button
+                          onClick={() => abrirModalComentarios(plan)}
+                          className="flex items-center gap-3 text-white/70 hover:text-pink-400 hover:bg-white/10 px-4 py-3 rounded-xl transition-all duration-300 font-medium"
+                        >
+                          <MessageCircle className="w-5 h-5" />
+                          <span>Ver comentarios</span>
+                          <div className="bg-gradient-to-r from-pink-500 to-purple-500 text-white px-3 py-1 rounded-xl text-sm font-bold">
+                            {plan.commentCount || 0}
                           </div>
-                        )}
-                      {/* Compartir */}
-                      <button
-                        onClick={() =>
-                          navigator.share?.({
-                            title: plan.title,
-                            text: plan.description,
-                            url: window.location.href,
-                          }) || alert('Función de compartir no disponible')
-                        }
-                        className="flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs sm:text-sm rounded-full transition-colors duration-200"
-                      >
-                        <Share2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span className="hidden sm:inline">Compartir</span>
-                        <span className="sm:hidden">Share</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Comentarios */}
-                  <div className="pt-2">
-                    <button
-                      onClick={() => abrirModalComentarios(plan)}
-                      className="flex items-center gap-2 text-xs sm:text-sm text-blue-600 hover:text-blue-800 hover:underline transition-colors"
-                    >
-                      <MessageCircle className="w-3 h-3 sm:w-4 sm:h-4" />
-                      <span className="hidden sm:inline">Ver comentarios</span>
-                      <span className="sm:hidden">Comentarios</span>
-                      <span className="bg-blue-100 text-blue-800 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium">
-                        {plan.commentCount || 0}
-                      </span>
-                    </button>
-                  </div>
-
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -1133,109 +985,98 @@ useEffect(() => {
           )}
         </section>
 
-        {/* Modal de comentarios responsivo */}
+        {/* Modal de comentarios moderno */}
         {modalComentarios.isOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4">
-            <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] sm:max-h-[80vh] flex flex-col">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white/10 backdrop-blur-2xl rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col border border-white/20">
               {/* Header del Modal */}
-              <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50">
-                <div className="min-w-0 flex-1 mr-4">
-                  <h3 className="text-lg sm:text-xl font-bold text-gray-900 flex items-center gap-2">
-                    <span className="text-base sm:text-lg">💬</span>
-                    <span className="hidden sm:inline">Comentarios</span>
-                    <span className="sm:hidden">Chat</span>
-                  </h3>
-                  <p className="text-xs sm:text-sm text-gray-600 mt-1 truncate">
-                    {modalComentarios.planTitle}
-                  </p>
+              <div className="flex items-center justify-between p-6 border-b border-white/20">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-r from-pink-500 to-purple-500 rounded-2xl flex items-center justify-center">
+                    <MessageCircle className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black text-white">Comentarios</h3>
+                    <p className="text-white/60 truncate">{modalComentarios.planTitle}</p>
+                  </div>
                 </div>
                 <button
                   onClick={cerrarModalComentarios}
-                  className="p-2 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0"
+                  className="p-3 hover:bg-white/10 rounded-2xl transition-colors"
                 >
-                  <X className="w-5 h-5 text-gray-500" />
+                  <X className="w-6 h-6 text-white" />
                 </button>
               </div>
 
               {/* Contenido del Modal */}
               <div className="flex-1 overflow-hidden flex flex-col">
                 {/* Lista de Comentarios */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+                <div className="flex-1 overflow-y-auto p-6">
                   {cargandoComentarios[modalComentarios.planId] ? (
                     <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600"></div>
-                      <span className="ml-3 text-gray-600 text-sm sm:text-base">Cargando comentarios...</span>
+                      <div className="w-12 h-12 border-4 border-pink-500/30 border-t-pink-500 rounded-full animate-spin"></div>
+                      <span className="ml-4 text-white font-medium">Cargando comentarios...</span>
                     </div>
                   ) : comentarios[modalComentarios.planId]?.length > 0 ? (
-                    <div className="space-y-3 sm:space-y-4">
-                      {comentarios[modalComentarios.planId].map((comentario) => {
-                        console.log('Renderizando comentario:', comentario);
-                        
-                        return (
-                          <div
-                            key={comentario.id}
-                            className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg sm:rounded-xl p-3 sm:p-4 hover:shadow-md transition-all duration-200"
-                          >
-                            <div className="flex items-start gap-2 sm:gap-3">
-                              {/* Avatar del usuario */}
-                              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold text-xs sm:text-sm flex-shrink-0">
-                                {(comentario.userName?.charAt(0) || 'A').toUpperCase()}
-                              </div>
-                              
-                              {/* Contenido del comentario */}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mb-2">
-                                  <span className="font-semibold text-gray-900 truncate text-sm sm:text-base">
-                                    {comentario.userName || 'Usuario Anónimo'}
-                                  </span>
-                                  <div className="flex items-center text-xs text-gray-500 gap-1">
-                                    <Clock className="w-3 h-3" />
-                                    {(() => {
-                                      let fecha;
-                                      if (comentario.timestamp?.seconds) {
-                                        fecha = new Date(comentario.timestamp.seconds * 1000);
-                                      } else if (comentario.timestamp?.toDate) {
-                                        fecha = comentario.timestamp.toDate();
-                                      } else {
-                                        fecha = new Date(comentario.timestamp);
-                                      }
-                                      
-                                      return fecha.toLocaleString('es-ES', {
-                                        day: 'numeric',
-                                        month: 'short',
-                                        hour: '2-digit',
-                                        minute: '2-digit'
-                                      });
-                                    })()}
-                                  </div>
+                    <div className="space-y-4">
+                      {comentarios[modalComentarios.planId].map((comentario) => (
+                        <div
+                          key={comentario.id}
+                          className="bg-white/10 backdrop-blur-xl rounded-2xl p-4 border border-white/20 hover:bg-white/20 transition-all duration-300"
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-purple-600 rounded-2xl flex items-center justify-center text-white font-bold">
+                              {(comentario.userName?.charAt(0) || 'A').toUpperCase()}
+                            </div>
+                            
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-3 mb-2">
+                                <span className="font-bold text-white">{comentario.userName || 'Usuario Anónimo'}</span>
+                                <div className="flex items-center text-white/60 text-sm gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  {(() => {
+                                    let fecha;
+                                    if (comentario.timestamp?.seconds) {
+                                      fecha = new Date(comentario.timestamp.seconds * 1000);
+                                    } else if (comentario.timestamp?.toDate) {
+                                      fecha = comentario.timestamp.toDate();
+                                    } else {
+                                      fecha = new Date(comentario.timestamp);
+                                    }
+                                    
+                                    return fecha.toLocaleString('es-ES', {
+                                      day: 'numeric',
+                                      month: 'short',
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    });
+                                  })()}
                                 </div>
-                                <p className="text-gray-800 leading-relaxed break-words text-sm sm:text-base">
-                                  {comentario.text}
-                                </p>
                               </div>
+                              <p className="text-white leading-relaxed break-words">
+                                {comentario.text}
+                              </p>
                             </div>
                           </div>
-                        );
-                      })}
+                        </div>
+                      ))}
                     </div>
                   ) : (
-                    <div className="text-center py-12 sm:py-16">
-                      <div className="text-4xl sm:text-5xl lg:text-6xl mb-4">💬</div>
-                      <h4 className="text-lg sm:text-xl font-semibold text-gray-600 mb-2">
-                        No hay comentarios aún
-                      </h4>
-                      <p className="text-gray-500 mb-4 sm:mb-6 text-sm sm:text-base">
-                        ¡Sé el primero en comentar sobre este plan!
-                      </p>
-                      <div className="bg-blue-50 rounded-lg p-3 sm:p-4 text-xs sm:text-sm text-blue-700">
-                        💡 Los comentarios aparecerán aquí en tiempo real
+                    <div className="text-center py-16">
+                      <div className="text-8xl mb-6">💬</div>
+                      <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 border border-white/20">
+                        <h4 className="text-2xl font-bold text-white mb-4">No hay comentarios aún</h4>
+                        <p className="text-white/70 mb-6">¡Sé el primero en comentar sobre este plan épico!</p>
+                        <div className="bg-pink-500/20 rounded-2xl p-4 text-pink-300 text-sm">
+                          💡 Los comentarios aparecerán aquí en tiempo real
+                        </div>
                       </div>
                     </div>
                   )}
                 </div>
  
                 {/* Formulario para agregar comentario */}
-                <div className="border-t border-gray-200 p-4 sm:p-6 bg-gradient-to-r from-blue-50 to-purple-50">
+                <div className="border-t border-white/20 p-6 bg-white/5">
                   <form
                     onSubmit={async (e) => {
                       e.preventDefault();
@@ -1245,39 +1086,37 @@ useEffect(() => {
                       await agregarComentario(modalComentarios.planId, texto);
                       e.target.reset();
                     }}
-                    className="space-y-3 sm:space-y-4"
+                    className="space-y-4"
                   >
-                    <div className="flex gap-2 sm:gap-3">
-                      {/* Avatar del usuario actual */}
-                      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold text-xs sm:text-sm flex-shrink-0">
+                    <div className="flex gap-4">
+                      <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-purple-600 rounded-2xl flex items-center justify-center text-white font-bold flex-shrink-0">
                         {(user?.displayName?.charAt(0) || user?.email?.charAt(0) || 'U').toUpperCase()}
                       </div>
                       
                       <div className="flex-1">
                         <textarea
                           name="comentario"
-                          placeholder="Escribe tu comentario aquí... 💭"
-                          className="w-full p-3 sm:p-4 border border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 resize-none transition-all duration-200 placeholder:text-gray-400 text-sm sm:text-base"
-                          rows="2"
+                          placeholder="Escribe tu comentario épico aquí... ✨"
+                          className="w-full p-4 bg-white/10 backdrop-blur-xl border border-white/30 rounded-2xl focus:outline-none focus:border-pink-400 focus:ring-4 focus:ring-pink-500/20 resize-none transition-all duration-300 text-white placeholder:text-white/50"
+                          rows="3"
                           maxLength={500}
                         />
-                        <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
+                        <div className="flex items-center justify-between mt-2 text-xs text-white/60">
                           <span>Máximo 500 caracteres</span>
                         </div>
                       </div>
                     </div>
                     
                     <div className="flex justify-between items-center">
-                      <span className="text-xs sm:text-sm text-gray-600">
+                      <span className="text-white/60 font-medium">
                         {comentarios[modalComentarios.planId]?.length || 0} comentarios
                       </span>
                       <button
                         type="submit"
-                        className="px-4 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white rounded-lg sm:rounded-xl transition-all duration-200 flex items-center gap-1.5 sm:gap-2 font-medium shadow-lg hover:shadow-xl transform hover:scale-105 text-sm sm:text-base"
+                        className="px-8 py-3 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white rounded-2xl transition-all duration-300 flex items-center gap-3 font-bold shadow-2xl hover:scale-105"
                       >
-                        <Send className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span className="hidden sm:inline">Comentar</span>
-                        <span className="sm:hidden">Enviar</span>
+                        <Send className="w-5 h-5" />
+                        <span>Comentar</span>
                       </button>
                     </div>
                   </form>
@@ -1287,40 +1126,23 @@ useEffect(() => {
           </div>
         )}
 
-      {/* MODAL COMPONENT  */}
-      {modalPlanDetails.isOpen && modalPlanDetails.plan && (
-        <PlanDetailsModal 
-          plan={modalPlanDetails.plan} 
-          user={user} 
-          isOpen={modalPlanDetails.isOpen} 
-          onClose={cerrarModalPlanDetails} 
-        />
-      )}
+        {/* MODAL COMPONENT */}
+        {modalPlanDetails.isOpen && modalPlanDetails.plan && (
+          <PlanDetailsModal 
+            plan={modalPlanDetails.plan} 
+            user={user} 
+            isOpen={modalPlanDetails.isOpen} 
+            onClose={cerrarModalPlanDetails} 
+          />
+        )}
       </main>
 
-      {/* Panel de notificaciones responsivo */}
-      {showNotifications && (
-        <div className="fixed top-16 sm:top-20 right-3 sm:right-6 bg-white rounded-xl shadow-2xl border border-gray-200 p-4 sm:p-6 w-72 sm:w-80 z-40 max-h-96 overflow-y-auto">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base sm:text-lg font-bold text-gray-900">🔔 Notificaciones sinde</h3>
-            <button
-              onClick={() => setShowNotifications(false)}
-              className="text-gray-500 hover:text-gray-700 p-1"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="space-y-3">
-            <div className="p-3 bg-blue-50 rounded-lg border-l-4 border-blue-400">
-              <p className="text-sm text-gray-700">¡Bienvenido a SindesParches! 🎉</p>
-              <p className="text-xs text-gray-500 mt-1">Hace 5 minutos</p>
-            </div>
-            <div className="text-center py-4 text-gray-500 text-sm">
-              No tienes más notificaciones
-            </div>
-          </div>
-        </div>
-      )}
+       {/* Panel de notificaciones */}
+      <NotificationsPanel 
+        user={user}
+        isOpen={showNotifications}
+        onClose={() => setShowNotifications(false)}
+      />
     </div>
   );
 };

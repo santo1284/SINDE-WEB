@@ -5,6 +5,7 @@ import Home from './componentes/home.jsx';
 import CrearPerfil from './componentes/CrearPerfil.jsx';
 import Perfil from './componentes/Perfil.jsx';
 import VerifyEmailModal from './componentes/VerifyEmailModal';
+import { AuthProvider } from './context/AuthContext';
 import { auth, db } from './firebase/firebase-config.js';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -174,37 +175,39 @@ function App() {
   }
 
   return (
-    <div className="App relative min-h-screen">
-      {/* 🔹 Vistas */}
-      {currentView === 'login' && (
-        <LoginScreen
-          onLoginSuccess={handleLoginSuccess}
-          onShowCrearCuenta={showCrearCuenta}
-        />
-      )}
-      {currentView === 'crearCuenta' && (
-        <CrearCuenta
-          onCrearCuentaSuccess={() => {
-            setShowVerifyModal(true); // 👈 abre modal de verificación
-            setCurrentView('login');  // vuelve al login hasta verificar
-          }}
-          onShowLogin={showLogin}
-        />
-      )}
-      {currentView === 'crearPerfil' && (
-        <CrearPerfil user={user} onPerfilCreado={showHome} />
-      )}
-      {currentView === "home" && (
-        <Home 
-          user={user} 
-          onLogout={handleLogout} 
-          onShowPerfil={() => setCurrentView("perfil")}
-        />
-      )}
-      {currentView === 'perfil' && (
-        <Perfil user={user} onBack={showHome} />
-      )}
-    </div>
+    <AuthProvider>
+      <div className="App relative min-h-screen">
+        {/* 🔹 Vistas */}
+        {currentView === 'login' && (
+          <LoginScreen
+            onLoginSuccess={handleLoginSuccess}
+            onShowCrearCuenta={showCrearCuenta}
+          />
+        )}
+        {currentView === 'crearCuenta' && (
+          <CrearCuenta
+            onCrearCuentaSuccess={() => {
+              setShowVerifyModal(true); // 👈 abre modal de verificación
+              setCurrentView('login');  // vuelve al login hasta verificar
+            }}
+            onShowLogin={showLogin}
+          />
+        )}
+        {currentView === 'crearPerfil' && (
+          <CrearPerfil user={user} onPerfilCreado={showHome} />
+        )}
+        {currentView === "home" && (
+          <Home 
+            user={user} 
+            onLogout={handleLogout} 
+            onShowPerfil={() => setCurrentView("perfil")}
+          />
+        )}
+        {currentView === 'perfil' && (
+          <Perfil user={user} onBack={showHome} />
+        )}
+      </div>
+    </AuthProvider>
   );
 }
 
