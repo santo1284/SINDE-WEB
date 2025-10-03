@@ -19,7 +19,8 @@ import {
   getDocs,
   setDoc,
   getDoc,
-  where
+  where,
+  deleteDoc 
 } from 'firebase/firestore';
 import { db, storage, auth } from '../firebase/firebase-config';
 import {
@@ -48,7 +49,8 @@ import {
   Phone,
   Sparkles,
   Star,
-  Zap
+  Zap,
+  MoreVertical
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import Slider from 'react-slick';
@@ -123,6 +125,8 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
   const [comentarios, setComentarios] = useState({});
   const [ultimosComentarios, setUltimosComentarios] = useState({});
   const [cargandoComentarios, setCargandoComentarios] = useState({});
+
+  const [menuAbierto, setMenuAbierto] = useState(null); // null o planId
   
   // Estados para el comportamiento del header
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
@@ -849,25 +853,90 @@ const [perfilPublicoAbierto, setPerfilPublicoAbierto] = useState({
           {/* Efecto de brillo en hover */}
           <div className="absolute inset-0 bg-gradient-to-r from-pink-500/0 via-purple-500/10 to-pink-500/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
           
-          {/* ✅ Info del creador */}
-          <div className="relative z-10 flex items-center gap-3 mb-4 bg-white/10 backdrop-blur-xl rounded-2xl p-3 border border-white/10">
-            {plan.createdByPhotoURL ? (
-              <img
-                src={plan.createdByPhotoURL}
-                alt={plan.createdByName}
-                className="w-10 h-10 rounded-full object-cover ring-2 ring-white/30"
-              />
-            ) : (
-              <div className="w-10 h-10 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm ring-2 ring-white/30">
-                {(plan.createdByName?.charAt(0) || 'U').toUpperCase()}
-              </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="text-white font-bold text-sm truncate">
-                {plan.createdByName || 'Usuario'}
-              </p>
-            </div>
+      {/* Info del creador */}
+<div className="relative z-10 flex items-center gap-3 mb-4 bg-white/10 backdrop-blur-xl rounded-2xl p-3 border border-white/10">
+  {plan.createdByPhotoURL ? (
+    <img
+      src={plan.createdByPhotoURL}
+      alt={plan.createdByName}
+      className="w-10 h-10 rounded-full object-cover ring-2 ring-white/30"
+    />
+  ) : (
+    <div className="w-10 h-10 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm ring-2 ring-white/30">
+      {(plan.createdByName?.charAt(0) || 'U').toUpperCase()}
+    </div>
+  )}
+  
+  <div className="flex-1 min-w-0">
+    <p className="text-white font-bold text-sm truncate">
+      {plan.createdByName || 'Usuario'}
+    </p>
+  </div>
+
+  {/* Menú de tres puntos - SOLO si es el creador */}
+  {plan.userId === user.uid && (
+    <div className="relative">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setMenuAbierto(menuAbierto === plan.id ? null : plan.id);
+        }}
+        className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+        title="Opciones"
+      >
+        <MoreVertical className="w-5 h-5 text-white" />
+      </button>
+
+      {/* Dropdown Menu */}
+      {menuAbierto === plan.id && (
+        <>
+          {/* Overlay para cerrar al hacer click afuera */}
+          <div 
+            className="fixed inset-0 z-40" 
+            onClick={() => setMenuAbierto(null)}
+          />
+          
+          {/* Menu */}
+          <div className="absolute right-0 top-full mt-2 w-48 bg-white/95 backdrop-blur-xl rounded-xl shadow-2xl border border-white/20 overflow-hidden z-50">
+            <button
+              onClick={async (e) => {
+                e.stopPropagation();
+                setMenuAbierto(null);
+                alert('Función de editar en desarrollo');
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-blue-500/20 transition-colors text-left"
+            >
+              <Settings className="w-4 h-4 text-blue-600" />
+              <span className="text-gray-800 font-medium">Editar</span>
+            </button>
+            
+            <div className="border-t border-gray-200" />
+            
+            <button
+              onClick={async (e) => {
+                e.stopPropagation();
+                setMenuAbierto(null);
+                if (window.confirm('¿Estás seguro de eliminar este plan?')) {
+                  try {
+                    await deleteDoc(doc(db, 'planes', plan.id));
+                    alert('Plan eliminado exitosamente');
+                  } catch (error) {
+                    console.error('Error al eliminar:', error);
+                    alert('Error al eliminar el plan');
+                  }
+                }
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-500/20 transition-colors text-left"
+            >
+              <X className="w-4 h-4 text-red-600" />
+              <span className="text-gray-800 font-medium">Eliminar</span>
+            </button>
           </div>
+        </>
+      )}
+    </div>
+  )}
+</div>
 
       {/* Imágenes del plan con diseño moderno */}
       {uniqueImages.length > 0 && (
