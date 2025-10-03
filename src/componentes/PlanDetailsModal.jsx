@@ -65,11 +65,11 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
       // Verificar primero qué campo tiene el plan
       const creatorId = plan?.userId || plan?.creatorId;
       
-      console.log('🔍 Debug - Plan completo:', plan);
-      console.log('🔍 userId encontrado:', creatorId);
+     // console.log('🔍 Debug - Plan completo:', plan);
+      //console.log('🔍 userId encontrado:', creatorId);
       
       if (!creatorId) {
-        console.log('⚠️ No se encontró userId en el plan');
+      //  console.log('⚠️ No se encontró userId en el plan');
         setCreatorInfo({ 
           name: plan?.createdByName || plan?.creatorName || 'Usuario', 
           photoURL: null 
@@ -84,7 +84,7 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
         
         if (perfilSnap.exists()) {
           const profileData = perfilSnap.data();
-          console.log('✅ Perfil encontrado:', profileData);
+        //  console.log('✅ Perfil encontrado:', profileData);
           
           let photoURL = profileData.fotoURL;
           
@@ -93,9 +93,9 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
             try {
               const fotoRef = ref(storage, `profile_pictures/${creatorId}`);
               photoURL = await getDownloadURL(fotoRef);
-              console.log('✅ Foto encontrada en Storage:', photoURL);
+             // console.log('✅ Foto encontrada en Storage:', photoURL);
             } catch (storageError) {
-              console.log('ℹ️ No se encontró foto en Storage');
+             // console.log('ℹ️ No se encontró foto en Storage');
             }
           }
           
@@ -104,14 +104,14 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
             photoURL: photoURL
           });
         } else {
-          console.log('❌ No existe documento de perfil para este usuario');
+          //console.log('❌ No existe documento de perfil para este usuario');
           setCreatorInfo({ 
             name: plan?.createdByName || plan?.creatorName || 'Usuario', 
             photoURL: null 
           });
         }
       } catch (error) {
-        console.error('❌ Error obteniendo perfil del creador:', error);
+       // console.error('❌ Error obteniendo perfil del creador:', error);
         setCreatorInfo({ 
           name: plan?.createdByName || plan?.creatorName || 'Usuario', 
           photoURL: null 

@@ -7,11 +7,12 @@ import {
   onSnapshot,
   updateDoc,
   doc,
-  deleteDoc 
+  deleteDoc,
+  getDoc
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase-config';
 
-const NotificationsPanel = ({ user, isOpen, onClose }) => {
+const NotificationsPanel = ({ user, isOpen, onClose, onNavigateToPlan }) => {  // ✅ Nueva prop
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -51,6 +52,41 @@ const NotificationsPanel = ({ user, isOpen, onClose }) => {
 
     return () => unsubscribe();
   }, [isOpen, user?.uid]);
+
+  // ✅ Manejar clic en notificación
+  const handleNotificationClick = async (notification) => {
+    try {
+      // Marcar como leída
+      if (!notification.read) {
+        await marcarComoLeida(notification.id);
+      }
+
+      // Si tiene planId, navegar al plan
+      if (notification.planId && onNavigateToPlan) {
+        // Obtener los datos del plan
+        const planRef = doc(db, 'planes', notification.planId);
+        const planSnap = await getDoc(planRef);
+        
+        if (planSnap.exists()) {
+          const planData = {
+            id: planSnap.id,
+            ...planSnap.data()
+          };
+          
+          // Cerrar el panel de notificaciones
+          onClose();
+          
+          // Abrir el modal del plan
+          onNavigateToPlan(planData);
+        } else {
+          console.log('El plan ya no existe');
+          // Opcional: mostrar mensaje al usuario
+        }
+      }
+    } catch (error) {
+      console.error('Error navegando al plan:', error);
+    }
+  };
 
   // Marcar notificación como leída
   const marcarComoLeida = async (notificationId) => {
@@ -147,11 +183,11 @@ const NotificationsPanel = ({ user, isOpen, onClose }) => {
             {notifications.map((notification) => (
               <div
                 key={notification.id}
-                onClick={() => !notification.read && marcarComoLeida(notification.id)}
+                onClick={() => handleNotificationClick(notification)}  // ✅ Manejar clic
                 className={`relative group rounded-2xl p-4 transition-all cursor-pointer ${
                   notification.read
                     ? 'bg-white/5 hover:bg-white/10'
-                    : 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 border-l-4 border-blue-400'
+                    : 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 border-l-4 border-blue-400 hover:from-blue-500/30 hover:to-purple-500/30'
                 }`}
               >
                 {/* Botón eliminar */}
@@ -178,7 +214,12 @@ const NotificationsPanel = ({ user, isOpen, onClose }) => {
                     </p>
                     {notification.planTitle && (
                       <p className="text-white/70 text-sm truncate mb-2">
-                        {notification.planTitle}
+                        📍 {notification.planTitle}
+                      </p>
+                    )}
+                    {notification.commentText && (
+                      <p className="text-white/60 text-xs italic mb-2 line-clamp-2">
+                        "{notification.commentText}"
                       </p>
                     )}
                     <div className="flex items-center gap-2 text-white/60 text-xs">
@@ -189,7 +230,7 @@ const NotificationsPanel = ({ user, isOpen, onClose }) => {
 
                   {/* Indicador de no leída */}
                   {!notification.read && (
-                    <div className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-2"></div>
+                    <div className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-2 animate-pulse"></div>
                   )}
                 </div>
               </div>
@@ -210,7 +251,7 @@ const NotificationsPanel = ({ user, isOpen, onClose }) => {
         )}
       </div>
 
-      {/* Footer (opcional) */}
+      {/* Footer */}
       {notifications.length > 0 && (
         <div className="border-t border-white/20 p-4">
           <button

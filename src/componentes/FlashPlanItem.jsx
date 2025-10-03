@@ -4,25 +4,22 @@ import { db } from '../firebase/firebase-config';
 import { useAuth } from '../context/AuthContext';
 import FlashPlanViewer from './FlashPlanViewer';
 
-const FlashPlanItem = ({ flashPlan }) => {
+const FlashPlanItem = ({ flashPlan, onFlashPlanOpen }) => {  // ✅ Recibe la prop
   const [showViewer, setShowViewer] = useState(false);
   const [userDisplayName, setUserDisplayName] = useState('Usuario');
   const { currentUser } = useAuth();
 
-  // Verificar si el usuario actual ya vio este Flash Plan
   const hasViewed = flashPlan.viewers?.includes(currentUser?.uid) || flashPlan.userId === currentUser?.uid;
 
   // Obtener el nombre real del usuario desde la colección perfil
   useEffect(() => {
     const fetchUserName = async () => {
       try {
-        // Si userName no está vacío, usarlo
         if (flashPlan.userName && flashPlan.userName.trim() && flashPlan.userName !== '') {
           setUserDisplayName(flashPlan.userName);
           return;
         }
 
-        // Si userName está vacío, buscar en la colección perfil
         if (flashPlan.userId) {
           const perfilRef = doc(db, 'perfil', flashPlan.userId);
           const perfilSnap = await getDoc(perfilRef);
@@ -37,7 +34,6 @@ const FlashPlanItem = ({ flashPlan }) => {
           }
         }
 
-        // Como último recurso, usar email si está disponible
         if (flashPlan.userEmail) {
           setUserDisplayName(flashPlan.userEmail.split('@')[0]);
         } else {
@@ -50,7 +46,14 @@ const FlashPlanItem = ({ flashPlan }) => {
     };
 
     fetchUserName();
-  }, [flashPlan.userId, flashPlan.userName]);
+  }, [flashPlan.userId, flashPlan.userName, flashPlan.userEmail]);
+
+  // ✅ Notificar cuando showViewer cambia
+  useEffect(() => {
+    if (onFlashPlanOpen) {
+      onFlashPlanOpen(showViewer);
+    }
+  }, [showViewer, onFlashPlanOpen]);
 
   // Calcular tiempo restante usando timestamp
   const getTimeRemaining = () => {
