@@ -10,13 +10,18 @@ getDocs,
 query,
 where,
 onSnapshot,
+addDoc,
+orderBy,
+limit
 } from "firebase/firestore";
 import { ref, getDownloadURL } from "firebase/storage";
 import EditarPerfilModal from "./EditarPerfil";
 import PlanModal from "./PlanModal";
 import PlanDetailsModal from "./PlanDetailsModal";
+import CreateFlashPlan from "./CreateFlashPlan";
+import ProfileFlashPlanViewer from "./ProfileFlashPlanViewer";
 import { onAuthStateChanged } from "firebase/auth";
-import { User, Phone, MapPin, Calendar, Mail, Check, Edit, Heart, Plus, Share2, MessageCircle } from "lucide-react";
+import { User, Phone, MapPin, Calendar, Mail, Check, Edit, Heart, Plus, Share2, MessageCircle, Eye, Clock, Send, X } from "lucide-react";
 
 function Perfil({ onBack }) {
 const [perfilData, setPerfilData] = useState(null);
@@ -27,6 +32,8 @@ const [activeTab, setActiveTab] = useState("info");
 const [imageUrl, setImageUrl] = useState(null);
 const [imageLoading, setImageLoading] = useState(true);
 const [modalCrearPlan, setModalCrearPlan] = useState(false);
+const [modalCrearFlashPlan, setModalCrearFlashPlan] = useState(false);
+const [selectedFlashPlan, setSelectedFlashPlan] = useState(null);
 const [user, setUser] = useState(null);
 const [selectedPlan, setSelectedPlan] = useState(null);
 const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
@@ -34,9 +41,90 @@ const [isCommentsModalOpen, setIsCommentsModalOpen] = useState(false);
 const [selectedPlanForComments, setSelectedPlanForComments] = useState(null);
 const [commentText, setCommentText] = useState("");
 const [planComments, setPlanComments] = useState({});
+const [modalComentarios, setModalComentarios] = useState({
+  isOpen: false,
+  planId: null,
+  planTitle: ''
+});
+const [comentarios, setComentarios] = useState({});
+const [cargandoComentarios, setCargandoComentarios] = useState({});
 
 // Estados para las interacciones de cada plan
 const [planInteractions, setPlanInteractions] = useState({});
+
+// Función para cargar todos los comentarios de un plan
+const cargarTodosLosComentarios = async (planId) => {
+  if (cargandoComentarios[planId]) return;
+  
+  setCargandoComentarios(prev => ({ ...prev, [planId]: true }));
+  
+  try {
+    const commentsRef = collection(db, 'planes', planId, 'comments');
+    const q = query(commentsRef, orderBy('timestamp', 'desc'));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const comentariosData = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data
+        };
+      });
+      
+      setComentarios(prev => ({
+        ...prev,
+        [planId]: comentariosData
+      }));
+      
+      setCargandoComentarios(prev => ({ ...prev, [planId]: false }));
+    }, (error) => {
+      console.error('Error en snapshot de comentarios:', error);
+      setCargandoComentarios(prev => ({ ...prev, [planId]: false }));
+    });
+
+    setComentarios(prev => ({
+      ...prev,
+      [`unsubscribe_${planId}`]: unsubscribe
+    }));
+    
+  } catch (error) {
+    console.error('Error al cargar comentarios:', error);
+    setCargandoComentarios(prev => ({ ...prev, [planId]: false }));
+  }
+};
+
+// Función para agregar un comentario
+const agregarComentario = async (planId, texto) => {
+  if (!texto.trim()) return;
+
+  try {
+    const commentsRef = collection(db, 'planes', planId, 'comments');
+    
+    const nuevoComentario = {
+      planId: planId,
+      userId: user.uid,
+      userName: user.displayName || user.email?.split('@')[0] || 'Usuario Anónimo',
+      userProfileImageUrl: null,
+      text: texto.trim(),
+      timestamp: new Date(),
+    };
+
+    await addDoc(commentsRef, nuevoComentario);
+
+    const planRef = doc(db, 'planes', planId);
+    const planActual = planes.find(p => p.id === planId);
+    const nuevoConteo = (planActual.commentCount || 0) + 1;
+    
+    await updateDoc(planRef, {
+      commentCount: nuevoConteo,
+      lastCommentAt: new Date()
+    });
+
+  } catch (error) {
+    console.error('Error al agregar comentario:', error);
+    alert(`Error al agregar el comentario: ${error.message}`);
+  }
+};
 
 // Función para compartir un plan
 const handleSharePlan = async (plan) => {
@@ -49,10 +137,8 @@ const handleSharePlan = async (plan) => {
 
   try {
     if (navigator.share) {
-      // Usar la API nativa de compartir del navegador
       await navigator.share(shareData);
       
-      // Incrementar contador de compartidos
       setPlanInteractions(prev => {
         const current = prev[plan.id] || {
           likes: 0,
@@ -68,7 +154,6 @@ const handleSharePlan = async (plan) => {
         };
       });
     } else {
-      // Fallback: copiar al portapapeles
       await navigator.clipboard.writeText(planUrl);
       alert('¡Enlace copiado al portapapeles!');
     }
@@ -128,10 +213,10 @@ const handleJoinPlan = (planId) => {
   });
 };
 
-// Calcular totales de me gustas
+// Calcular totales de me gustas REALES de Firebase
 const getTotalLikes = () => {
-  return Object.values(planInteractions).reduce((total, plan) => {
-    return total + (plan.isLiked ? 1 : 0);
+  return planes.reduce((total, plan) => {
+    return total + (plan.likes?.length || 0);
   }, 0);
 };
 
@@ -201,7 +286,6 @@ const perfilSnap = await getDoc(perfilRef);
 if (perfilSnap.exists()) {
 setPerfilData(perfilSnap.data());
 }
-  // Imagen de perfil
   try {
     const storageRef = ref(storage, `profile_pictures/${currentUser.uid}`);
     const url = await getDownloadURL(storageRef);
@@ -321,7 +405,6 @@ try {
 }
 };
 
-// Si no hay perfil cargado todavía
 if (!perfilData) {
 return (
 <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-pink-900 flex items-center justify-center">
@@ -333,10 +416,8 @@ return (
 );
 }
 
-// JSX del perfil con diseño mejorado
 return (
 <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-pink-900 relative overflow-hidden">
-  {/* Elementos decorativos de fondo */}
   <div className="absolute inset-0 overflow-hidden pointer-events-none">
     <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/20 rounded-full blur-3xl"></div>
     <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-pink-500/20 rounded-full blur-3xl"></div>
@@ -345,7 +426,6 @@ return (
 
   <div className="relative z-10 max-w-6xl mx-auto px-4 lg:px-6 py-6">
 
-    {/* Botón volver mejorado */}
     <div className="mb-8">
       <button
         onClick={onBack}
@@ -358,15 +438,12 @@ return (
       </button>
     </div>
 
-    {/* Header principal con diseño curvo */}
     <div className="relative mb-8">
       <div className="bg-gradient-to-br from-purple-600 via-indigo-600 to-pink-600 rounded-t-[3rem] px-8 py-12 relative overflow-hidden">
         
-        {/* Patrón decorativo */}
         <div className="absolute inset-0 bg-gradient-to-r from-white/5 to-transparent"></div>
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-32 translate-x-32"></div>
         
-        {/* Botón editar flotante */}
         <button
           onClick={() => setIsEditing(true)}
           className="absolute top-6 right-6 bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white p-3 rounded-2xl transition-all duration-300 hover:scale-110 border border-white/20"
@@ -374,10 +451,8 @@ return (
           <Edit className="w-5 h-5" />
         </button>
 
-{/* Contenido del header */}
 <div className="relative flex flex-col items-center justify-center text-white text-center">
   
-  {/* Foto de perfil mejorada */}
   <div className="relative mb-6 flex justify-center">
     <div className="w-32 h-32 rounded-full border-4 border-white/30 shadow-2xl overflow-hidden bg-white/10 backdrop-blur-sm">
       {imageLoading ? (
@@ -397,7 +472,6 @@ return (
       )}
     </div>
     
-    {/* Badge online */}
     <div 
       className="absolute w-6 h-6 bg-green-500 rounded-full border-2 border-white flex items-center justify-center shadow-lg"
       style={{
@@ -409,7 +483,6 @@ return (
     </div>
   </div>
 
-  {/* Información del usuario */}
   <div className="flex flex-col items-center text-center">
     <h1 className="text-3xl font-bold mb-3 tracking-tight">
       {perfilData.nombre}
@@ -424,29 +497,24 @@ return (
   </div>
 </div>
 
-      {/* Estadísticas generales - CUADRITOS PEQUEÑOS Y DELICADOS */}
       <div className="bg-white/95 backdrop-blur-xl border-x border-white/20 px-8 py-4">
         <div className="flex justify-center gap-3 mb-4">
-          {/* Cuadrito de Me gustas */}
           <div className="bg-gradient-to-br from-red-50 to-pink-50 rounded-xl px-4 py-2 border border-red-100 flex items-center gap-2">
             <Heart className="w-4 h-4 text-red-500 fill-red-500" />
             <span className="text-lg font-bold text-red-600">{getTotalLikes()}</span>
           </div>
 
-          {/* Cuadrito de Planes */}
           <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl px-4 py-2 border border-purple-100 flex items-center gap-2">
             <Calendar className="w-4 h-4 text-purple-500" />
             <span className="text-lg font-bold text-purple-600">{planes.length}</span>
           </div>
 
-          {/* Cuadrito de FlashPlans */}
           <div className="bg-gradient-to-br from-pink-50 to-rose-50 rounded-xl px-4 py-2 border border-pink-100 flex items-center gap-2">
             <MapPin className="w-4 h-4 text-pink-500" />
             <span className="text-lg font-bold text-pink-600">{flashPlans.length}</span>
           </div>
         </div>
 
-        {/* Tabs limpios */}
         <div className="flex justify-center">
           <div className="flex bg-gray-100 rounded-2xl p-2 gap-2">
             {[
@@ -474,12 +542,11 @@ return (
         </div>
       </div>
 
-      {/* Contenido con fondo blanco y bordes redondeados */}
       <div className="bg-white/95 backdrop-blur-xl rounded-b-[3rem] border-x border-b border-white/20 p-8">
         
-        {/* TAB INFORMACIÓN */}
-        {activeTab === "info" && (
-          <div className="space-y-8">
+       {activeTab === "info" && (
+        <div className="space-y-8">
+    
             <h2 className="text-3xl font-bold text-gray-800 text-center mb-10">
               Información Personal
             </h2>
@@ -551,12 +618,10 @@ return (
           </div>
         )}
 
-        {/* TAB PLANES */}
-        
         {activeTab === "planes" && (
           <div>
           <div className="grid grid-cols-3 items-center mb-8">
-            <div></div> {/* Columna vacía para balancear */}
+            <div></div>
             <h2 className="text-3xl font-bold text-gray-800 text-center mb-10">
               Mis Planes
                </h2>
@@ -565,7 +630,6 @@ return (
               </span>
             </div>
 
-            {/* Si tiene planes */}
             {planes.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {planes.map((plan) => {
@@ -574,9 +638,12 @@ return (
                   return (
                     <div
                       key={plan.id}
-                      className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden hover:shadow-2xl transition-all duration-300 hover:scale-105 group"
+                      onClick={() => {
+                        setSelectedPlan(plan);
+                        setIsPlanModalOpen(true);
+                      }}
+                      className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden hover:shadow-2xl transition-all duration-300 hover:scale-105 group cursor-pointer"
                     >
-                      {/* Imagen principal del plan */}
                       {plan.imageUrls && plan.imageUrls.length > 0 && (
                         <div className="relative w-full h-48 overflow-hidden">
                           <img
@@ -588,9 +655,7 @@ return (
                         </div>
                       )}
 
-                      {/* Contenido */}
                       <div className="p-5">
-                        {/* Header con avatar y nombre */}
                         <div className="flex items-center justify-between mb-4">
                           <div className="flex items-center gap-3">
                             {imageUrl ? (
@@ -624,18 +689,10 @@ return (
                           </span>
                         </div>
 
-                        {/* Título - CLICKEABLE para ver el plan */}
-                        <h3 
-                          onClick={() => {
-                            setSelectedPlan(plan);
-                            setIsPlanModalOpen(true);
-                          }}
-                          className="text-xl font-bold text-gray-900 mb-3 line-clamp-2 group-hover:text-purple-600 transition-colors cursor-pointer"
-                        >
+                        <h3 className="text-xl font-bold text-gray-900 mb-3 line-clamp-2 group-hover:text-purple-600 transition-colors">
                           {plan.title || "Plan sin título"}
                         </h3>
 
-                        {/* Fecha y hora del plan */}
                         <div className="flex items-center text-sm text-gray-600 gap-4 mb-3">
                           <span className="flex items-center gap-2 bg-blue-50 px-3 py-1 rounded-lg">
                             <Calendar className="w-4 h-4 text-blue-600" />
@@ -651,7 +708,6 @@ return (
                           )}
                         </div>
 
-                        {/* Ubicación */}
                         {plan.location && (
                           <div className="flex items-center gap-2 text-sm text-gray-600 mb-3 bg-purple-50 px-3 py-2 rounded-lg">
                             <MapPin className="w-4 h-4 text-purple-600" />
@@ -659,12 +715,10 @@ return (
                           </div>
                         )}
 
-                        {/* Descripción */}
                         <p className="text-gray-600 text-sm mb-4 line-clamp-2 leading-relaxed">
                           {plan.description || "Sin descripción"}
                         </p>
 
-                        {/* Logo de WhatsApp (si está habilitado) - ARRIBA DE LOS ICONOS */}
                         {plan.enableWhatsapp && (
                           <div className="flex justify-end mb-3">
                             <div className="bg-green-500 p-2 rounded-full shadow-md hover:bg-green-600 transition-colors">
@@ -675,9 +729,7 @@ return (
                           </div>
                         )}
 
-                        {/* Botones de interacción - ME GUSTA Y PARTICIPAR INTERACTIVOS */}
                         <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                          {/* Like - CON NÚMERO DENTRO DEL CORAZÓN */}
                           <button 
                             onClick={(e) => {
                               e.stopPropagation();
@@ -699,7 +751,6 @@ return (
                             </div>
                           </button>
 
-                          {/* Participar - BOTÓN INTERACTIVO */}
                           <button 
                             onClick={(e) => {
                               e.stopPropagation();
@@ -721,15 +772,24 @@ return (
                             </span>
                           </button>
 
-                          {/* Comentarios - SOLO MOSTRAR NÚMEROS DE FIREBASE */}
-                          <div className="flex items-center space-x-1 px-3 py-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setModalComentarios({
+                                isOpen: true,
+                                planId: plan.id,
+                                planTitle: plan.title
+                              });
+                              cargarTodosLosComentarios(plan.id);
+                            }}
+                            className="flex items-center space-x-1 hover:bg-gray-50 px-3 py-2 rounded-lg transition-colors"
+                          >
                             <MessageCircle className="w-5 h-5 text-gray-600" />
                             <span className="text-sm text-gray-600">
                               {plan.commentCount || 0}
                             </span>
-                          </div>
+                          </button>
 
-                          {/* Compartir - BOTÓN INTERACTIVO PARA COMPARTIR */}
                           <button 
                             onClick={(e) => {
                               e.stopPropagation();
@@ -749,7 +809,6 @@ return (
                 })}
               </div>
             ) : (
-              /* Si no tiene planes */
               <div className="text-center py-16">
                 <div className="bg-gradient-to-br from-purple-100 to-pink-100 rounded-full p-8 w-32 h-32 mx-auto mb-6 flex items-center justify-center">
                   <Calendar className="w-16 h-16 text-purple-500" />
@@ -771,24 +830,109 @@ return (
           </div>
         )}
 
-        {/* TAB FLASHPLANS */}
         {activeTab === "flashplans" && (
           <div>
-            <div className="relative mb-8">
-              <h2 className="text-3xl font-bold text-gray-800 text-center">
+            <div className="grid grid-cols-3 items-center mb-8">
+              <div></div>
+              <h2 className="text-3xl font-bold text-gray-800 text-center mb-10">
                 Mis FlashPlans
               </h2>
-               <span className="absolute right-0 top-1/2 -translate-y-1/2 bg-gradient-to-r from-pink-100 to-orange-100 text-pink-700 px-4 py-2 rounded-full text-sm font-bold border border-pink-200">
-                  {flashPlans.length} flashplans
-               </span>
+              <span className="justify-self-end bg-gradient-to-r from-pink-100 to-orange-100 text-pink-700 px-4 py-2 rounded-full text-sm font-bold border border-pink-200">
+                {flashPlans.length} flashplans
+              </span>
             </div>
+
             {flashPlans.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {flashPlans.map((flashPlan) => (
-                  <div key={flashPlan.id} className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300">
-                    <p className="text-gray-600">FlashPlan: {flashPlan.id}</p>
-                  </div>
-                ))}
+                {flashPlans.map((flashPlan) => {
+                  const createdTime = flashPlan.timestamp?.toDate?.()?.getTime() || flashPlan.timestamp?.seconds * 1000 || 0;
+                  const expirationTime = createdTime + (24 * 60 * 60 * 1000);
+                  const now = Date.now();
+                  const hoursRemaining = Math.floor((expirationTime - now) / (1000 * 60 * 60));
+                  
+                  return (
+                    <div 
+                      key={flashPlan.id} 
+                      onClick={() => setSelectedFlashPlan(flashPlan)}
+                      className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100 hover:shadow-2xl transition-all duration-300 cursor-pointer group hover:scale-105"
+                    >
+                      {/* Imagen principal del FlashPlan */}
+                      <div className="relative w-full h-64 overflow-hidden">
+                        {flashPlan.imageUrl ? (
+                          <>
+                            <img
+                              src={flashPlan.imageUrl}
+                              alt="FlashPlan"
+                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                            />
+                            {/* Overlay con degradado */}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+                            
+                            {/* Contenido de texto superpuesto si existe */}
+                            {flashPlan.content && (
+                              <div className="absolute bottom-0 left-0 right-0 p-4">
+                                <p className="text-white text-sm font-medium line-clamp-2">{flashPlan.content}</p>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center p-6">
+                            <p className="text-white text-center font-medium text-lg">
+                              {flashPlan.content || "FlashPlan sin contenido"}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Badge de tiempo restante */}
+                        <div className="absolute top-3 right-3">
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold backdrop-blur-xl ${
+                            hoursRemaining > 12 
+                              ? 'bg-green-500/90 text-white' 
+                              : hoursRemaining > 6 
+                              ? 'bg-yellow-500/90 text-white' 
+                              : hoursRemaining > 0
+                              ? 'bg-red-500/90 text-white'
+                              : 'bg-gray-500/90 text-white'
+                          }`}>
+                            {hoursRemaining > 0 ? `${hoursRemaining}h` : 'Expirado'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Información del FlashPlan */}
+                      <div className="p-4 bg-gradient-to-br from-gray-50 to-white">
+                        <div className="flex items-center justify-between">
+                          {/* Fecha de publicación */}
+                          <div className="flex items-center gap-2 text-gray-600">
+                            <Calendar className="w-4 h-4" />
+                            <span className="text-xs font-medium">
+                              {flashPlan.timestamp?.toDate?.()?.toLocaleDateString('es-ES', {
+                                day: '2-digit',
+                                month: 'short'
+                              })}
+                            </span>
+                          </div>
+
+                          {/* Contador de vistas con diseño destacado */}
+                          <div className="flex items-center gap-2 bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1.5 rounded-full">
+                            <Eye className="w-4 h-4 text-purple-600" />
+                            <span className="text-sm font-bold text-purple-700">
+                              {flashPlan.viewers?.length || 0}
+                            </span>
+                            <span className="text-xs text-purple-600">vistas</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Indicador de clic */}
+                      <div className="px-4 pb-3">
+                        <div className="text-center">
+                          <span className="text-xs text-gray-400 font-medium">Click para ver completo</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="text-center py-16">
@@ -798,7 +942,16 @@ return (
                 <h3 className="text-2xl font-bold text-gray-800 mb-3">
                   No tienes FlashPlans aún
                 </h3>
-                <p className="text-gray-600">Próximamente podrás crear FlashPlans</p>
+                <p className="text-gray-600 mb-8 max-w-md mx-auto">
+                  Crea tu primer FlashPlan y comparte momentos épicos que durarán 24 horas
+                </p>
+                <button
+                  onClick={() => setModalCrearFlashPlan(true)}
+                  className="bg-gradient-to-r from-pink-600 to-purple-600 text-white px-8 py-4 rounded-2xl font-bold hover:scale-105 transition-all duration-300 shadow-lg hover:shadow-xl inline-flex items-center gap-3"
+                >
+                  <Plus className="w-5 h-5" />
+                  ✨ Crear mi primer FlashPlan
+                </button>
               </div>
             )}
           </div>
@@ -808,7 +961,6 @@ return (
     </div>
   </div>
 
-  {/* Modales */}
   <EditarPerfilModal
     isOpen={isEditing}
     userData={perfilData}
@@ -829,17 +981,184 @@ return (
     }}
   />
 
-   {selectedPlan && (
-          <PlanDetailsModal
-            isOpen={isPlanModalOpen}
-            onClose={() => {
-              setIsPlanModalOpen(false);
-              setSelectedPlan(null);
-            }}
-            plan={selectedPlan}
-            user={user}
-          />
-        )}
+  {selectedPlan && (
+    <PlanDetailsModal
+      isOpen={isPlanModalOpen}
+      onClose={() => {
+        setIsPlanModalOpen(false);
+        setSelectedPlan(null);
+      }}
+      plan={selectedPlan}
+      user={user}
+    />
+  )}
+
+  {modalCrearFlashPlan && (
+    <CreateFlashPlan
+      onClose={() => setModalCrearFlashPlan(false)}
+      onSuccess={() => {
+        setModalCrearFlashPlan(false);
+        if (user) {
+          fetchFlashPlans(user);
+        }
+      }}
+    />
+  )}
+
+  {selectedFlashPlan && (
+    <ProfileFlashPlanViewer
+      flashPlan={selectedFlashPlan}
+      onClose={() => setSelectedFlashPlan(null)}
+      userName={perfilData?.nombre || user?.displayName || 'Usuario'}
+      userPhoto={imageUrl}
+    />
+  )}
+
+  {/* Modal de comentarios */}
+  {modalComentarios.isOpen && (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white/10 backdrop-blur-2xl rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col border border-white/20">
+        {/* Header del Modal */}
+        <div className="flex items-center justify-between p-6 border-b border-white/20">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-gradient-to-r from-pink-500 to-purple-500 rounded-2xl flex items-center justify-center">
+              <MessageCircle className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h3 className="text-2xl font-black text-white">Comentarios</h3>
+              <p className="text-white/60 truncate">{modalComentarios.planTitle}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setModalComentarios({ isOpen: false, planId: null, planTitle: '' })}
+            className="p-3 hover:bg-white/10 rounded-2xl transition-colors"
+          >
+            <X className="w-6 h-6 text-white" />
+          </button>
+        </div>
+
+        {/* Contenido del Modal */}
+        <div className="flex-1 overflow-hidden flex flex-col">
+          {/* Lista de Comentarios */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {cargandoComentarios[modalComentarios.planId] ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="w-12 h-12 border-4 border-pink-500/30 border-t-pink-500 rounded-full animate-spin"></div>
+                <span className="ml-4 text-white font-medium">Cargando comentarios...</span>
+              </div>
+            ) : comentarios[modalComentarios.planId]?.length > 0 ? (
+              <div className="space-y-4">
+                {comentarios[modalComentarios.planId].map((comentario) => (
+                  <div
+                    key={comentario.id}
+                    className="bg-white/10 backdrop-blur-xl rounded-2xl p-4 border border-white/20 hover:bg-white/20 transition-all duration-300"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-purple-600 rounded-2xl flex items-center justify-center text-white font-bold">
+                        {(comentario.userName?.charAt(0) || 'A').toUpperCase()}
+                      </div>
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className="font-bold text-white">{comentario.userName || 'Usuario Anónimo'}</span>
+                          <div className="flex items-center text-white/60 text-sm gap-1">
+                            <Clock className="w-3 h-3" />
+                            {(() => {
+                              let fecha;
+                              if (comentario.timestamp?.seconds) {
+                                fecha = new Date(comentario.timestamp.seconds * 1000);
+                              } else if (comentario.timestamp?.toDate) {
+                                fecha = comentario.timestamp.toDate();
+                              } else {
+                                fecha = new Date(comentario.timestamp);
+                              }
+                              
+                              return fecha.toLocaleString('es-ES', {
+                                day: 'numeric',
+                                month: 'short',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              });
+                            })()}
+                          </div>
+                        </div>
+                        <p className="text-white leading-relaxed break-words">
+                          {comentario.text}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-16">
+                <div className="text-8xl mb-6">💬</div>
+                <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 border border-white/20">
+                  <h4 className="text-2xl font-bold text-white mb-4">No hay comentarios aún</h4>
+                  <p className="text-white/70 mb-6">¡Sé el primero en comentar sobre este plan épico!</p>
+                  <div className="bg-pink-500/20 rounded-2xl p-4 text-pink-300 text-sm">
+                    💡 Los comentarios aparecerán aquí en tiempo real
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Formulario para agregar comentario */}
+          <div className="border-t border-white/20 p-6 bg-white/5">
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const texto = e.target.comentario.value.trim();
+                if (!texto) return;
+
+                // Aquí deberías tener la función agregarComentario disponible
+                // Si no la tienes en Perfil, necesitarás importarla o crearla
+                const planActual = planes.find(p => p.id === modalComentarios.planId);
+                if (planActual) {
+                  await agregarComentario(modalComentarios.planId, texto);
+                }
+                e.target.reset();
+              }}
+              className="space-y-4"
+            >
+              <div className="flex gap-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-purple-600 rounded-2xl flex items-center justify-center text-white font-bold flex-shrink-0">
+                  {mostrarInicial()}
+                </div>
+                
+                <div className="flex-1">
+                  <textarea
+                    name="comentario"
+                    placeholder="Escribe tu comentario épico aquí... ✨"
+                    className="w-full p-4 bg-white/10 backdrop-blur-xl border border-white/30 rounded-2xl focus:outline-none focus:border-pink-400 focus:ring-4 focus:ring-pink-500/20 resize-none transition-all duration-300 text-white placeholder:text-white/50"
+                    rows="3"
+                    maxLength={500}
+                  />
+                  <div className="flex items-center justify-between mt-2 text-xs text-white/60">
+                    <span>Máximo 500 caracteres</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-white/60 font-medium">
+                  {comentarios[modalComentarios.planId]?.length || 0} comentarios
+                </span>
+                <button
+                  type="submit"
+                  className="px-8 py-3 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white rounded-2xl transition-all duration-300 flex items-center gap-3 font-bold shadow-2xl hover:scale-105"
+                >
+                  <Send className="w-5 h-5" />
+                  <span>Comentar</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
       </div>
     </div>
   );

@@ -38,7 +38,7 @@ const mapContainerStyle = {
   height: '300px'
 };
 
-const VerPlan = ({ plan, user, isOpen, onClose }) => {
+const VerPlan = ({ plan, user, isOpen, onClose, onOpenPerfilPublico }) => {
   // Estados
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [comentarios, setComentarios] = useState([]);
@@ -350,42 +350,51 @@ const VerPlan = ({ plan, user, isOpen, onClose }) => {
   if (!isOpen || !plan) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
         
         {/* Header mejorado */}
         <div className="relative flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50">
           
-          {/* Foto de perfil del creador (lado izquierdo) */}
-          <div className="flex items-center gap-3">
-            {/* ✅ FOTO DE PERFIL CORREGIDA */}
-            <div className="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center flex-shrink-0">
-              {creatorInfo.photoURL ? (
-                <img 
-                  src={creatorInfo.photoURL} 
-                  alt={creatorInfo.name} 
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    console.log('Error cargando imagen, mostrando inicial');
-                    e.target.style.display = 'none';
-                    e.target.parentElement.innerHTML = `<div class="w-full h-full flex items-center justify-center text-white font-bold text-lg">${(creatorInfo.name?.charAt(0) || 'U').toUpperCase()}</div>`;
-                  }}
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-white font-bold text-lg">
-                  {(creatorInfo.name?.charAt(0) || 'U').toUpperCase()}
-                </div>
-              )}
-            </div>
-            
-            {/* Nombre del creador */}
-            <div>
-              <p className="text-sm font-medium text-gray-900">
-                {creatorInfo.name}
-              </p>
-              <p className="text-xs text-gray-500">Creador del plan</p>
-            </div>
-          </div>
+        {/* Foto de perfil del creador (lado izquierdo) - AHORA ES CLICKEABLE */}
+<div className="flex items-center gap-3">
+  <button
+    onClick={() => {
+      // Cerrar este modal primero
+      onClose();
+      // Abrir perfil público después de un pequeño delay
+      setTimeout(() => {
+        if (onOpenPerfilPublico) {
+          onOpenPerfilPublico(plan.userId);
+        }
+      }, 300);
+    }}
+    className="group flex items-center gap-3 hover:bg-white/10 rounded-2xl p-2 transition-all duration-300 cursor-pointer"
+    title="Ver perfil de usuario"
+  >
+    <div className="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center group-hover:ring-4 group-hover:ring-pink-400/50 transition-all">
+      {creatorInfo.photoURL ? (
+        <img 
+          src={creatorInfo.photoURL} 
+          alt={creatorInfo.name} 
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-white font-bold">
+          {(creatorInfo.name?.charAt(0) || 'U').toUpperCase()}
+        </div>
+      )}
+    </div>
+      
+    {/* Nombre del creador */}
+    <div className="text-left">
+      <p className="text-sm font-medium text-gray-900 group-hover:text-purple-600 transition-colors">
+        {creatorInfo.name}
+      </p>
+      <p className="text-xs text-gray-500">Click para ver perfil</p>
+    </div>
+  </button>
+</div>
 
           {/* Título del plan (centrado) */}
           <div className="absolute left-1/2 transform -translate-x-1/2 text-center max-w-md">

@@ -57,6 +57,7 @@ import 'slick-carousel/slick/slick-theme.css';
 import logoSinde from '../assets/logo-sindesparches.png';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import imageCompression from "browser-image-compression";
+import PerfilPublico from './PerfilPublico';
 
 // Utilidades para manejo de imágenes y datos
 const ImageUtils = {
@@ -458,6 +459,12 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
       const fechaB = b.date?.toDate?.() || new Date(b.date);
       return fechaB - fechaA; 
     });
+
+// Estado para perfil público
+const [perfilPublicoAbierto, setPerfilPublicoAbierto] = useState({
+  isOpen: false,
+  userId: null
+});
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-purple-900 relative overflow-hidden">
@@ -1127,15 +1134,27 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
         )}
 
         {/* MODAL COMPONENT */}
-        {modalPlanDetails.isOpen && modalPlanDetails.plan && (
-          <PlanDetailsModal 
-            plan={modalPlanDetails.plan} 
-            user={user} 
-            isOpen={modalPlanDetails.isOpen} 
-            onClose={cerrarModalPlanDetails} 
-          />
-        )}
+{modalPlanDetails.isOpen && modalPlanDetails.plan && (
+  <PlanDetailsModal 
+    plan={modalPlanDetails.plan} 
+    user={user} 
+    isOpen={modalPlanDetails.isOpen} 
+    onClose={cerrarModalPlanDetails}
+    onOpenPerfilPublico={(userId) => {
+      setPerfilPublicoAbierto({ isOpen: true, userId });
+    }}
+  />
+)}
       </main>
+
+
+{perfilPublicoAbierto.isOpen && (
+  <PerfilPublico
+    userId={perfilPublicoAbierto.userId}
+    currentUser={user}
+    onClose={() => setPerfilPublicoAbierto({ isOpen: false, userId: null })}
+  />
+)}
 
        {/* Panel de notificaciones */}
       <NotificationsPanel 

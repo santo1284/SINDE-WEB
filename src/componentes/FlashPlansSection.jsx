@@ -2,16 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { 
   collection, 
   query, 
-  where, 
   orderBy, 
-  onSnapshot, 
-  Timestamp,
-  getDocs,
-  deleteDoc,
-  doc
+  onSnapshot
 } from 'firebase/firestore';
-import { db } from "../firebase/firebase-config"; // Ajusta la ruta según tu configuración
-import { useAuth } from '../context/AuthContext'; // Ajusta según tu contexto de autenticación
+import { db } from "../firebase/firebase-config";
+import { useAuth } from '../context/AuthContext';
 import FlashPlanItem from './FlashPlanItem';
 import CreateFlashPlan from './CreateFlashPlan';
 
@@ -20,15 +15,10 @@ const FlashPlansSection = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const { currentUser } = useAuth();
 
-  // Función para limpiar Flash Plans expirados (ya no es necesaria, se hace en el useEffect)
-  const cleanExpiredFlashPlans = async () => {
-    // Esta función ya no se usa, la limpieza se hace en el useEffect
-  };
-
   useEffect(() => {
     if (!currentUser) return;
 
-    // Query simplificada usando la estructura real de tus datos
+    // Query para obtener todos los FlashPlans ordenados por fecha
     const q = query(
       collection(db, 'flashPlans'),
       orderBy('timestamp', 'desc')
@@ -45,12 +35,12 @@ const FlashPlansSection = () => {
         const createdTime = data.timestamp?.toDate?.()?.getTime() || data.timestamp?.seconds * 1000 || 0;
         const expirationTime = createdTime + (24 * 60 * 60 * 1000); // 24 horas en milisegundos
         
-        // Solo mostrar planes que no han expirado
+        // Solo mostrar planes que no han expirado EN EL HOME
+        // PERO NO LOS ELIMINAMOS de Firebase, se quedan almacenados
         if (expirationTime > currentTime) {
           plans.push({ 
             id: docSnapshot.id, 
             ...data,
-            // Agregar campo calculado para compatibilidad
             expiresAt: new Date(expirationTime),
             createdAt: data.timestamp?.toDate?.() || new Date(data.timestamp?.seconds * 1000)
           });
@@ -58,37 +48,16 @@ const FlashPlansSection = () => {
       });
       
       setFlashPlans(plans);
-      console.log(`Cargados ${plans.length} Flash Plans activos (de ${snapshot.docs.length} totales)`);
+      console.log(`Mostrando ${plans.length} Flash Plans activos en el home (de ${snapshot.docs.length} totales en Firebase)`);
     }, (error) => {
       console.error('Error escuchando Flash Plans:', error);
     });
 
-    // Limpiar Flash Plans expirados cada hora
-    const cleanupInterval = setInterval(async () => {
-      // Limpiar documentos expirados de Firebase
-      const allDocsSnapshot = await getDocs(collection(db, 'flashPlans'));
-      const currentTime = Date.now();
-      
-      const deletePromises = [];
-      allDocsSnapshot.forEach((docSnapshot) => {
-        const data = docSnapshot.data();
-        const createdTime = data.timestamp?.toDate?.()?.getTime() || data.timestamp?.seconds * 1000 || 0;
-        const expirationTime = createdTime + (24 * 60 * 60 * 1000);
-        
-        if (expirationTime <= currentTime) {
-          deletePromises.push(deleteDoc(doc(db, 'flashPlans', docSnapshot.id)));
-        }
-      });
-      
-      if (deletePromises.length > 0) {
-        await Promise.all(deletePromises);
-        console.log(`Eliminados ${deletePromises.length} Flash Plans expirados`);
-      }
-    }, 60 * 60 * 1000); // Cada hora
-
+    // Ya NO limpiamos los FlashPlans expirados de Firebase
+    // Se mantienen almacenados para que aparezcan en el perfil
+    
     return () => {
       unsubscribe();
-      clearInterval(cleanupInterval);
     };
   }, [currentUser]);
 
@@ -114,7 +83,6 @@ const FlashPlansSection = () => {
 
   return (
     <div className="w-full mb-8">
-      
       
       {/* Flash Plans horizontales */}
       <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
