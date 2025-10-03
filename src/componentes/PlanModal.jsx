@@ -19,8 +19,9 @@ const containerStyleMobile = {
   height: "180px",
   borderRadius: "12px",
 };
+const libraries = ["places", "geometry"];
 
-const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
+const PlanModal = ({ isOpen, onClose, onPlanCreated, perfilData }) => {
   const [nuevoPlan, setNuevoPlan] = useState({
     title: '',
     description: '',
@@ -36,7 +37,6 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
     phoneNumber: ''
   });
 
-  const libraries = ["places", "geometry"];
   const [imageFiles, setImageFiles] = useState([]);
   const [previewUrls, setPreviewUrls] = useState([]);
   const [errores, setErrores] = useState({});
@@ -52,7 +52,7 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
   const { isLoaded } = useJsApiLoader({
     id: 'shared-google-maps', // MISMO ID
     googleMapsApiKey: 'AIzaSyCxjuEfWAO73CCvvkWyNA3dXGHc_EXOBMo',
-    libraries: ['geometry', 'places', 'maps'] // MISMAS LIBRERÍAS
+    libraries: libraries  // ✅ Usar la constante en lugar del array literal
   });
   // Detectar tamaño de pantalla
   const [isMobile, setIsMobile] = useState(false);
@@ -199,70 +199,87 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated }) => {
   };
 
   // Crear Plan
-  const crearPlan = async (e) => {
-    e.preventDefault();
-    if (!validarFormulario()) return;
-    setCreandoPlan(true);
-    try {
-      const user = auth.currentUser;
-      if (!user) throw new Error("Usuario no autenticado");
-      const displayName = user.displayName || (user.email ? user.email.split('@')[0] : 'Usuario');
-      const photoURL = user.photoURL || null;
-      const planId = uuidv4();
-      const imageUrls = await uploadImagesToFirebase(imageFiles, user.uid, planId);
-      const dateMs = new Date(`${nuevoPlan.date}T${nuevoPlan.timeString}`).getTime();
-      const planData = {
-        id: planId,
-        userId: user.uid,
-        createdByName: displayName,
-        createdByPhotoURL: photoURL,
-        createdAt: Date.now(),
-        title: nuevoPlan.title.trim(),
-        description: nuevoPlan.description.trim(),
-        date: dateMs || 0,
-        timeString: nuevoPlan.timeString,
-        location: nuevoPlan.location.trim(),
-        latitude: nuevoPlan.latitude,
-        longitude: nuevoPlan.longitude,
-        locationAddress: nuevoPlan.locationAddress || null,
-        city: nuevoPlan.city || null,
-        state: nuevoPlan.state || null,
-        imageUrls,
-        enableWhatsapp: !!nuevoPlan.enableWhatsapp,
-        phoneNumber: nuevoPlan.enableWhatsapp ? (nuevoPlan.phoneNumber || '').trim() : '',
-        likes: [],
-        participants: [],
-        commentCount: 0,
-        shares: 0
-      };
-      await setDoc(doc(db, 'planes', planId), planData);
-      if (onPlanCreated) onPlanCreated({ id: planId, ...planData });
-      previewUrls.forEach(url => URL.revokeObjectURL(url));
-      setPreviewUrls([]);
-      setImageFiles([]);
-      setNuevoPlan({
-        title: '',
-        description: '',
-        date: '',
-        timeString: '',
-        location: '',
-        latitude: null,
-        longitude: null,
-        locationAddress: '',
-        city: '',
-        state: '',
-        enableWhatsapp: false,
-        phoneNumber: ''
-      });
-      setErrores({});
-      onClose();
-    } catch (error) {
-      console.error("❌ Error al crear plan:", error);
-      setErrores({ general: "Error al crear el plan: " + (error?.message || 'desconocido') });
-    } finally {
-      setCreandoPlan(false);
+const crearPlan = async (e) => {
+  e.preventDefault();
+  if (!validarFormulario()) return;
+  setCreandoPlan(true);
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error("Usuario no autenticado");
+    
+    // ✅ Obtener foto de Storage si no está en perfilData
+    let photoURL = perfilData?.fotoURL;
+    if (!photoURL) {
+      try {
+        const fotoRef = ref(storage, `profile_pictures/${currentUser.uid}`);
+        photoURL = await getDownloadURL(fotoRef);
+      } catch (error) {
+        console.log("No se encontró foto en Storage");
+        photoURL = null;
+      }
     }
-  };
+    
+    const displayName = perfilData?.nombre || 
+                        currentUser.displayName || 
+                        (currentUser.email ? currentUser.email.split('@')[0] : 'Usuario');
+    
+    const planId = uuidv4();
+    const imageUrls = await uploadImagesToFirebase(imageFiles, currentUser.uid, planId);
+    const dateMs = new Date(`${nuevoPlan.date}T${nuevoPlan.timeString}`).getTime();
+    
+    const planData = {
+      id: planId,
+      userId: currentUser.uid,
+      createdByName: displayName,
+      createdByPhotoURL: photoURL,
+      createdAt: Date.now(),
+      title: nuevoPlan.title.trim(),
+      description: nuevoPlan.description.trim(),
+      date: dateMs || 0,
+      timeString: nuevoPlan.timeString,
+      location: nuevoPlan.location.trim(),
+      latitude: nuevoPlan.latitude,
+      longitude: nuevoPlan.longitude,
+      locationAddress: nuevoPlan.locationAddress || null,
+      city: nuevoPlan.city || null,
+      state: nuevoPlan.state || null,
+      imageUrls,
+      enableWhatsapp: !!nuevoPlan.enableWhatsapp,
+      phoneNumber: nuevoPlan.enableWhatsapp ? (nuevoPlan.phoneNumber || '').trim() : '',
+      likes: [],
+      participants: [],
+      commentCount: 0,
+      shares: 0
+    };
+    
+    await setDoc(doc(db, 'planes', planId), planData);
+    if (onPlanCreated) onPlanCreated({ id: planId, ...planData });
+    previewUrls.forEach(url => URL.revokeObjectURL(url));
+    setPreviewUrls([]);
+    setImageFiles([]);
+    setNuevoPlan({
+      title: '',
+      description: '',
+      date: '',
+      timeString: '',
+      location: '',
+      latitude: null,
+      longitude: null,
+      locationAddress: '',
+      city: '',
+      state: '',
+      enableWhatsapp: false,
+      phoneNumber: ''
+    });
+    setErrores({});
+    onClose();
+  } catch (error) {
+    console.error("❌ Error al crear plan:", error);
+    setErrores({ general: "Error al crear el plan: " + (error?.message || 'desconocido') });
+  } finally {
+    setCreandoPlan(false);
+  }
+};
 
   if (!isOpen) return null;
 
