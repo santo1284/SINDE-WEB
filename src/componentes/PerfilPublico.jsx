@@ -565,8 +565,8 @@ function PerfilPublico({ userId, onClose, currentUser }) {
                        <div className="flex items-center justify-between pt-3 border-t border-white/20">
                             <div className="flex items-center gap-2 flex-1">
                               <button
-                                onClick={async () => {
-                                  e.stopPropagation();
+                             onClick={async (e) => {  // ✅ Agregar (e) aquí
+                             e.stopPropagation();
                                   if (!currentUser) return;
                                   const planRef = doc(db, "planes", plan.id);
                                   const hasLiked = plan.likes?.includes(currentUser.uid);
@@ -591,8 +591,8 @@ function PerfilPublico({ userId, onClose, currentUser }) {
                               </button>
 
                               <button
-                                onClick={async () => {
-                                      e.stopPropagation();
+                                onClick={async (e) => {  // ✅ Agregar (e) aquí
+                                  e.stopPropagation();
                                   if (!currentUser) return;
                                   const planRef = doc(db, "planes", plan.id);
                                   const hasJoined = plan.participants?.includes(currentUser.uid);
