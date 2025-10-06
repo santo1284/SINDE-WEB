@@ -159,6 +159,7 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
     plan: null
   });
 
+  //fin
   const cerrarModalPlanDetails = () => {
     setModalPlanDetails({
       isOpen: false,
