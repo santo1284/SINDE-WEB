@@ -27,6 +27,7 @@ import {
   User,
   LogOut,
   Heart,
+  AlertTriangle, // agregue esta linea para eliminar
   Check,
   Share2,
   MessageCircle,
@@ -60,6 +61,7 @@ import logoSinde from '../assets/logo-sindesparches.png';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import imageCompression from "browser-image-compression";
 import PerfilPublico from './PerfilPublico';
+import SuccessModal from './SuccessModal';
 
 // Utilidades para manejo de imágenes y datos
 const ImageUtils = {
@@ -127,6 +129,17 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
   const [cargandoComentarios, setCargandoComentarios] = useState({});
 
   const [menuAbierto, setMenuAbierto] = useState(null); // null o planId
+//estado para eliminar plan
+  const [modalEliminar, setModalEliminar] = useState(false);
+  const [planAEliminar, setPlanAEliminar] = useState(null);
+  const [isDeletingPlan, setIsDeletingPlan] = useState(false);
+//estado para editar plan
+  const [planEditando, setPlanEditando] = useState(null);
+//estados para se elimino con exito o se edito con exito 
+  const [successModal, setSuccessModal] = useState({
+  isOpen: false,
+  message: ''
+});
   
   // Estados para el comportamiento del header
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
@@ -161,9 +174,22 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
   };
   
   const handlePlanCreated = (newPlan) => {
-    console.log('Plan creado:', newPlan);
-    setModalCrearPlan(false);
-  };
+  console.log('Plan creado/actualizado:', newPlan);
+  
+  // Detectar si estábamos editando usando el estado
+  const fueEdicion = planEditando !== null;
+  
+  setModalCrearPlan(false);
+  setPlanEditando(null);
+  
+  // Mostrar modal de éxito
+  setSuccessModal({
+    isOpen: true,
+    message: fueEdicion 
+      ? '✅ Plan actualizado exitosamente' 
+      : '✅ Plan creado exitosamente'
+  });
+};
   
   const [nuevoPlan, setNuevoPlan] = useState({
     title: '',
@@ -195,6 +221,47 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
       console.error('Error al cerrar sesión:', error);
     }
   };
+
+  const handleEliminarClick = (plan) => {
+  setPlanAEliminar(plan);
+  setModalEliminar(true);
+  setMenuAbierto(null);
+};
+
+const confirmarEliminacion = async () => {
+  setIsDeletingPlan(true); // ✅ Activar loading
+  
+  try {
+    await deleteDoc(doc(db, 'planes', planAEliminar.id));
+    
+    // ✅ Cerrar modal de confirmación
+    setModalEliminar(false);
+    setPlanAEliminar(null);
+    setIsDeletingPlan(false);
+    
+    // ✅ Mostrar modal de éxito inmediatamente
+    setSuccessModal({
+      isOpen: true,
+      message: '✅ Plan eliminado exitosamente'
+    });
+    
+  } catch (error) {
+    console.error('Error al eliminar:', error);
+    setIsDeletingPlan(false);
+    setModalEliminar(false);
+    setPlanAEliminar(null);
+    
+    setSuccessModal({
+      isOpen: true,
+      message: '❌ Error al eliminar el plan'
+    });
+  }
+};
+// ✅ AGREGAR ESTA FUNCIÓN COMPLETA AQUÍ:
+const cancelarEliminacion = () => {
+  setModalEliminar(false);
+  setPlanAEliminar(null);
+};
 
   // Contar notificaciones sin leer
   useEffect(() => {
@@ -510,7 +577,8 @@ useEffect(() => {
 
 const planesFiltrados = planes
   .filter((plan) =>
-    plan.title?.toLowerCase().includes(busqueda.toLowerCase())
+    plan.title?.toLowerCase().includes(busqueda.toLowerCase()) ||
+    plan.createdByName?.toLowerCase().includes(busqueda.toLowerCase())
   )
   .sort((a, b) => {
     // Ordenar por fecha de creación, NO por la fecha del evento
@@ -525,13 +593,14 @@ const [perfilPublicoAbierto, setPerfilPublicoAbierto] = useState({
   userId: null
 });
 
-  return (
+   return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-purple-900 relative overflow-hidden">
       {/* Elementos decorativos de fondo */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-pink-400/20 to-purple-600/20 rounded-full blur-3xl"></div>
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-tr from-blue-400/20 to-indigo-600/20 rounded-full blur-3xl"></div>
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gradient-to-r from-purple-400/10 to-pink-400/10 rounded-full blur-3xl"></div>
+        
       </div>
 
      {/* HEADER MODERNO CON SCROLL */}
@@ -772,9 +841,13 @@ const [perfilPublicoAbierto, setPerfilPublicoAbierto] = useState({
         {/* Modal */}
         <PlanModal 
           isOpen={modalCrearPlan}
-          onClose={() => setModalCrearPlan(false)}
+           onClose={() => {
+              setModalCrearPlan(false);
+              setPlanEditando(null); // Limpiar al cerrar
+            }}
           onPlanCreated={handlePlanCreated}
           perfilData={perfilData}  // ✅ AGREGAR ESTA LÍNEA
+          planToEdit={planEditando} // Pasar el plan a editar
         />
         {/* AGREGAR ESTO */}
         <FlashPlansSection 
@@ -784,10 +857,10 @@ const [perfilPublicoAbierto, setPerfilPublicoAbierto] = useState({
           onOpen={() => setIsFlashPlanOpen(true)}
         />
 
-{/* SECCIÓN DE PLANES CON DISEÑO MODERNO */}
-<section>
-  <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-12 gap-6">
-    <div className="relative">
+      {/* SECCIÓN DE PLANES CON DISEÑO MODERNO */}
+      <section>
+       <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-12 gap-6">
+      <div className="relative">
       {/* Línea decorativa superior */}
       <div className="absolute top-0 left-0 w-32 h-1 bg-gradient-to-r from-pink-500 to-purple-500 rounded-full"></div>
 
@@ -807,9 +880,9 @@ const [perfilPublicoAbierto, setPerfilPublicoAbierto] = useState({
 
       {/* Línea decorativa inferior */}
       <div className="w-full h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
-    </div>
+     </div>
 
-    {busqueda && (
+     {busqueda && (
       <div className="flex items-center gap-3 bg-white/10 backdrop-blur-xl rounded-2xl px-6 py-3">
         <span className="text-white/80 font-medium">Buscando:</span>
         <span className="bg-gradient-to-r from-pink-500 to-purple-500 text-white px-4 py-2 rounded-xl font-bold">
@@ -820,10 +893,10 @@ const [perfilPublicoAbierto, setPerfilPublicoAbierto] = useState({
         </button>
       </div>
     )}
-  </div>
+    </div>
 
-  {planesFiltrados.length === 0 ? (
-    <div className="text-center py-20 px-4">
+     {planesFiltrados.length === 0 ? (
+      <div className="text-center py-20 px-4">
       <div className="text-8xl mb-6">😔</div>
       <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-12 max-w-2xl mx-auto border border-white/20">
         <h3 className="text-3xl font-black text-white mb-4">
@@ -839,9 +912,9 @@ const [perfilPublicoAbierto, setPerfilPublicoAbierto] = useState({
           Crear el Primer Plan 🚀
         </button>
       </div>
-    </div>
-  ) : (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+     </div>
+     ) : (
+     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
       {planesFiltrados.map((plan) => {
         const uniqueImages = [...new Set(plan.imageUrls || [])];
 
@@ -899,37 +972,29 @@ const [perfilPublicoAbierto, setPerfilPublicoAbierto] = useState({
           {/* Menu */}
           <div className="absolute right-0 top-full mt-2 w-48 bg-white/95 backdrop-blur-xl rounded-xl shadow-2xl border border-white/20 overflow-hidden z-50">
             <button
-              onClick={async (e) => {
+            onClick={(e) => {
+              e.stopPropagation();
+              handleEliminarClick(plan);
+            }}
+            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-500/20 transition-colors text-left"
+          >
+            <X className="w-4 h-4 text-red-600" />
+            <span className="text-gray-800 font-medium">Eliminar</span>
+          </button>
+            
+            <div className="border-t border-gray-200" />
+            
+            <button
+              onClick={(e) => {
                 e.stopPropagation();
                 setMenuAbierto(null);
-                alert('Función de editar en desarrollo');
+                setPlanEditando(plan);
+                setModalCrearPlan(true);
               }}
               className="w-full flex items-center gap-3 px-4 py-3 hover:bg-blue-500/20 transition-colors text-left"
             >
               <Settings className="w-4 h-4 text-blue-600" />
               <span className="text-gray-800 font-medium">Editar</span>
-            </button>
-            
-            <div className="border-t border-gray-200" />
-            
-            <button
-              onClick={async (e) => {
-                e.stopPropagation();
-                setMenuAbierto(null);
-                if (window.confirm('¿Estás seguro de eliminar este plan?')) {
-                  try {
-                    await deleteDoc(doc(db, 'planes', plan.id));
-                    alert('Plan eliminado exitosamente');
-                  } catch (error) {
-                    console.error('Error al eliminar:', error);
-                    alert('Error al eliminar el plan');
-                  }
-                }
-              }}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-500/20 transition-colors text-left"
-            >
-              <X className="w-4 h-4 text-red-600" />
-              <span className="text-gray-800 font-medium">Eliminar</span>
             </button>
           </div>
         </>
@@ -977,7 +1042,7 @@ const [perfilPublicoAbierto, setPerfilPublicoAbierto] = useState({
 
       {/* Contenido del plan con diseño moderno */}
       <div className="relative z-10 space-y-4">
-        <h3 className="text-2xl font-black text-white group-hover:text-pink-300 transition-colors line-clamp-2">
+        <h3 className="text-xl sm:text-2xl font-bold text-white truncate capitalize">
           {plan.title}
         </h3>
         
@@ -1134,9 +1199,9 @@ const [perfilPublicoAbierto, setPerfilPublicoAbierto] = useState({
               {plan.commentCount || 0}
             </div>
           </button>
+           </div>
+          </div>
         </div>
-      </div>
-    </div>
                 );
               })}
             </div>
@@ -1314,6 +1379,87 @@ const [perfilPublicoAbierto, setPerfilPublicoAbierto] = useState({
         onClose={() => setShowNotifications(false)}
         onNavigateToPlan={abrirModalPlanDetails} 
       />
+
+      {/* Modal de Confirmación de Eliminación */}
+{modalEliminar && (
+  <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    {/* Overlay */}
+    <div 
+      className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+      onClick={() => {
+        if (!isDeletingPlan) cancelarEliminacion();
+      }}
+    />
+    
+    {/* Modal */}
+    <div className="relative bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-red-500 to-pink-500 p-6 text-center">
+        <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-3">
+          <AlertTriangle className="w-8 h-8 text-red-500" />
+        </div>
+        <h3 className="text-2xl font-bold text-white">
+          ¿Estás seguro?
+        </h3>
+      </div>
+
+      {/* Contenido */}
+      <div className="p-6 text-center">
+        <p className="text-gray-700 text-lg mb-2">
+          ¿Estás seguro que quieres eliminar este plan?
+        </p>
+        {planAEliminar?.title && (
+          <p className="text-gray-600 font-semibold mb-2">
+            "{planAEliminar.title}"
+          </p>
+        )}
+        <p className="text-gray-500 text-sm">
+          Esta acción no se puede deshacer.
+        </p>
+      </div>
+
+      {/* Botones */}
+      <div className="flex gap-3 p-6 pt-0">
+        <button
+          onClick={cancelarEliminacion}
+          disabled={isDeletingPlan}
+          className={`flex-1 px-6 py-3 font-semibold rounded-xl transition-all duration-200 ${
+            isDeletingPlan
+              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              : 'bg-gray-200 hover:bg-gray-300 text-gray-800 hover:scale-105'
+          }`}
+        >
+          Cancelar
+        </button>
+        <button
+          onClick={confirmarEliminacion}
+          disabled={isDeletingPlan}
+          className={`flex-1 px-6 py-3 font-semibold rounded-xl transition-all duration-200 text-white flex items-center justify-center gap-2 ${
+            isDeletingPlan
+              ? 'bg-pink-400 cursor-not-allowed'
+              : 'bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 hover:scale-105 shadow-lg hover:shadow-xl'
+          }`}
+        >
+          {isDeletingPlan ? (
+            <>
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Eliminando...
+            </>
+          ) : (
+            'Eliminar'
+          )}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+{/* Modal de Éxito */}
+<SuccessModal
+  isOpen={successModal.isOpen}
+  onClose={() => setSuccessModal({ isOpen: false, message: '' })}
+  message={successModal.message}
+  type="success"
+/>
     </div>
   );
 };

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { doc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
+import { getStorage, ref as storageRef, getDownloadURL } from 'firebase/storage';
 import { db } from '../firebase/firebase-config';
 import { useAuth } from '../context/AuthContext';
 
@@ -7,6 +8,7 @@ const FlashPlanViewer = ({ flashPlan, onClose }) => {
   const [progress, setProgress] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState('');
   const [userDisplayName, setUserDisplayName] = useState('Usuario');
+  const [userPhotoURL, setUserPhotoURL] = useState(null);
   const { currentUser } = useAuth();
   const DURATION = 5000;
   const hasMarkedAsViewed = useRef(false);
@@ -20,47 +22,67 @@ const FlashPlanViewer = ({ flashPlan, onClose }) => {
     onClose();
   }, [onClose]);
 
-  // Obtener el nombre real del usuario
+  // Cargar foto y nombre del creador
   useEffect(() => {
-    const fetchUserName = async () => {
+    const fetchUserData = async () => {
       try {
-        if (flashPlan.userName && flashPlan.userName.trim() && flashPlan.userName !== '') {
-          setUserDisplayName(flashPlan.userName);
-          return;
-        }
-
-        if (flashPlan.userId) {
+        // Cargar nombre
+        let nombre = 'Usuario';
+        if (flashPlan.createdByName && flashPlan.createdByName.trim()) {
+          nombre = flashPlan.createdByName;
+        } else if (flashPlan.userName && flashPlan.userName.trim()) {
+          nombre = flashPlan.userName;
+        } else if (flashPlan.userId) {
           const perfilRef = doc(db, 'perfil', flashPlan.userId);
           const perfilSnap = await getDoc(perfilRef);
-          
           if (perfilSnap.exists()) {
             const perfilData = perfilSnap.data();
-            const nombre = perfilData.nombre || perfilData.displayName || perfilData.name;
-            if (nombre && nombre.trim()) {
-              setUserDisplayName(nombre);
-              return;
-            }
+            nombre = perfilData.nombre || perfilData.displayName || nombre;
           }
         }
+        setUserDisplayName(nombre);
 
-        if (flashPlan.userEmail) {
-          setUserDisplayName(flashPlan.userEmail.split('@')[0]);
-        } else {
-          setUserDisplayName('Usuario');
+        // Cargar foto de perfil
+        let foto = null;
+        
+        if (flashPlan.createdByPhotoURL) {
+          foto = flashPlan.createdByPhotoURL;
+        } 
+        else if (flashPlan.userPhoto) {
+          foto = flashPlan.userPhoto;
         }
+        else if (flashPlan.userId) {
+          const perfilRef = doc(db, 'perfil', flashPlan.userId);
+          const perfilSnap = await getDoc(perfilRef);
+          if (perfilSnap.exists()) {
+            const perfilData = perfilSnap.data();
+            foto = perfilData.fotoURL;
+          }
+        }
+        
+        if (!foto && flashPlan.userId) {
+          try {
+            const storage = getStorage();
+            const fotoRef = storageRef(storage, `profile_pictures/${flashPlan.userId}`);
+            foto = await getDownloadURL(fotoRef);
+          } catch (storageError) {
+            console.log('No hay foto en Storage');
+          }
+        }
+        
+        setUserPhotoURL(foto);
+
       } catch (error) {
-        console.error('Error obteniendo nombre de usuario:', error);
-        setUserDisplayName('Usuario');
+        console.error('Error cargando datos del usuario:', error);
       }
     };
 
-    fetchUserName();
-  }, [flashPlan.userId, flashPlan.userName, flashPlan.userEmail]);
+    fetchUserData();
+  }, [flashPlan]);
 
-  // Marcar como visto - SEPARADO del efecto principal
+  // Marcar como visto (versión simple con viewers)
   useEffect(() => {
     const markAsViewed = async () => {
-      // Verificar condiciones antes de actualizar
       if (
         currentUser && 
         flashPlan.userId !== currentUser.uid && 
@@ -68,28 +90,29 @@ const FlashPlanViewer = ({ flashPlan, onClose }) => {
         !hasMarkedAsViewed.current
       ) {
         try {
-          hasMarkedAsViewed.current = true; // Marcar como procesado
-          await updateDoc(doc(db, 'flashPlans', flashPlan.id), {
+          hasMarkedAsViewed.current = true;
+          
+          const flashPlanRef = doc(db, 'flashPlans', flashPlan.id);
+          await updateDoc(flashPlanRef, {
             viewers: arrayUnion(currentUser.uid)
           });
+          
         } catch (error) {
           console.error('Error marking as viewed:', error);
-          hasMarkedAsViewed.current = false; // Resetear en caso de error
+          hasMarkedAsViewed.current = false;
         }
       }
     };
 
     markAsViewed();
-  }, [flashPlan.id, flashPlan.userId, currentUser?.uid]);
+  }, [flashPlan.id, flashPlan.userId, flashPlan.viewers, currentUser?.uid]);
 
-  // Progress bar y tiempo - UN SOLO useEffect
+  // Progress bar y tiempo
   useEffect(() => {
-    // Progress bar animation con ref
     progressInterval.current = setInterval(() => {
       setProgress((prev) => {
         const newProgress = prev + (100 / (DURATION / 100));
         if (newProgress >= 100) {
-          // Usar setTimeout para evitar setState durante render
           setTimeout(() => handleClose(), 0);
           return 100;
         }
@@ -97,7 +120,6 @@ const FlashPlanViewer = ({ flashPlan, onClose }) => {
       });
     }, 100);
 
-    // Actualizar tiempo restante
     const updateTimeRemaining = () => {
       const now = new Date();
       const flashPlanDate = flashPlan.timestamp?.toDate();
@@ -122,7 +144,6 @@ const FlashPlanViewer = ({ flashPlan, onClose }) => {
     updateTimeRemaining();
     timeInterval.current = setInterval(updateTimeRemaining, 60000);
 
-    // Cleanup function
     return () => {
       if (progressInterval.current) clearInterval(progressInterval.current);
       if (timeInterval.current) clearInterval(timeInterval.current);
@@ -134,6 +155,9 @@ const FlashPlanViewer = ({ flashPlan, onClose }) => {
       handleClose();
     }
   };
+
+  // Calcular número de vistas
+  const viewsCount = flashPlan.viewers?.length || 0;
 
   return (
     <div 
@@ -152,21 +176,23 @@ const FlashPlanViewer = ({ flashPlan, onClose }) => {
         {/* Header */}
         <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full overflow-hidden bg-white">
-              {flashPlan.userPhoto ? (
+            <div className="w-10 h-10 rounded-full overflow-hidden bg-white ring-2 ring-white/50">
+              {userPhotoURL ? (
                 <img 
-                  src={flashPlan.userPhoto} 
+                  src={userPhotoURL} 
                   alt={userDisplayName}
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold">
+                <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-sm">
                   {userDisplayName.charAt(0).toUpperCase()}
                 </div>
               )}
             </div>
             <div>
-              <p className="text-white font-medium text-sm">{userDisplayName}</p>
+              <p className="text-white font-medium text-sm">
+                {userDisplayName}
+              </p>
               <p className="text-white text-xs opacity-75">{timeRemaining}</p>
             </div>
           </div>
@@ -181,7 +207,6 @@ const FlashPlanViewer = ({ flashPlan, onClose }) => {
 
         {/* Contenido */}
         <div className="h-full flex flex-col justify-center items-center p-6 pt-20">
-          {/* Imagen si existe */}
           {flashPlan.imageUrl && (
             <div className="mb-4 rounded-lg overflow-hidden max-w-full">
               <img
@@ -192,7 +217,6 @@ const FlashPlanViewer = ({ flashPlan, onClose }) => {
             </div>
           )}
 
-          {/* Texto del contenido */}
           {flashPlan.content && (
             <div className="text-center">
               <p className="text-white text-lg leading-relaxed">
@@ -201,7 +225,6 @@ const FlashPlanViewer = ({ flashPlan, onClose }) => {
             </div>
           )}
 
-          {/* Si no hay contenido ni imagen */}
           {!flashPlan.content && !flashPlan.imageUrl && (
             <div className="text-center">
               <p className="text-white text-lg opacity-75">
@@ -211,20 +234,27 @@ const FlashPlanViewer = ({ flashPlan, onClose }) => {
           )}
         </div>
 
-        {/* Footer con información adicional */}
+        {/* Footer con vistas - VERSIÓN SIMPLE */}
         <div className="absolute bottom-4 left-4 right-4">
-          <div className="flex items-center justify-between text-white text-xs">
-            <span>{flashPlan.viewers?.length || 0} vistas</span>
-            <span>
-              {flashPlan.timestamp?.toDate().toLocaleString('es-ES', {
-                hour: '2-digit',
-                minute: '2-digit'
-              }) || 'Sin fecha'}
-            </span>
-          </div>
+          {flashPlan.userId === currentUser?.uid ? (
+            <div className="w-full bg-white bg-opacity-20 text-white py-2 px-4 rounded-lg backdrop-blur-sm flex items-center justify-center gap-2">
+              <span>👁️</span>
+              <span className="font-medium">{viewsCount} vistas</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between text-white text-xs">
+              <span>{viewsCount} vistas</span>
+              <span>
+                {flashPlan.timestamp?.toDate().toLocaleString('es-ES', {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                }) || 'Sin fecha'}
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* Indicadores de navegación */}
+        {/* Indicadores */}
         <div className="absolute left-1/2 transform -translate-x-1/2 bottom-16">
           <div className="flex gap-2">
             <div className="w-2 h-2 rounded-full bg-white opacity-50"></div>

@@ -4,7 +4,7 @@ import { db } from '../firebase/firebase-config';
 import { useAuth } from '../context/AuthContext';
 import FlashPlanViewer from './FlashPlanViewer';
 
-const FlashPlanItem = ({ flashPlan, onFlashPlanOpen }) => {  // ✅ Recibe la prop
+const FlashPlanItem = ({ flashPlan, onFlashPlanOpen }) => {
   const [showViewer, setShowViewer] = useState(false);
   const [userDisplayName, setUserDisplayName] = useState('Usuario');
   const { currentUser } = useAuth();
@@ -15,6 +15,12 @@ const FlashPlanItem = ({ flashPlan, onFlashPlanOpen }) => {  // ✅ Recibe la pr
   useEffect(() => {
     const fetchUserName = async () => {
       try {
+        // Prioridad: createdByName > userName > perfil de Firestore
+        if (flashPlan.createdByName && flashPlan.createdByName.trim()) {
+          setUserDisplayName(flashPlan.createdByName);
+          return;
+        }
+
         if (flashPlan.userName && flashPlan.userName.trim() && flashPlan.userName !== '') {
           setUserDisplayName(flashPlan.userName);
           return;
@@ -46,9 +52,9 @@ const FlashPlanItem = ({ flashPlan, onFlashPlanOpen }) => {  // ✅ Recibe la pr
     };
 
     fetchUserName();
-  }, [flashPlan.userId, flashPlan.userName, flashPlan.userEmail]);
+  }, [flashPlan.userId, flashPlan.userName, flashPlan.userEmail, flashPlan.createdByName]);
 
-  // ✅ Notificar cuando showViewer cambia
+  // Notificar cuando showViewer cambia
   useEffect(() => {
     if (onFlashPlanOpen) {
       onFlashPlanOpen(showViewer);
@@ -73,7 +79,7 @@ const FlashPlanItem = ({ flashPlan, onFlashPlanOpen }) => {  // ✅ Recibe la pr
   return (
     <>
       <div className="flex-shrink-0 cursor-pointer" onClick={() => setShowViewer(true)}>
-        {/* Avatar con anillo de color y preview de contenido */}
+        {/* Avatar con anillo de color y preview del CONTENIDO */}
         <div className={`w-16 h-16 rounded-full p-0.5 ${hasViewed ? 'bg-gray-500' : 'bg-gradient-to-br from-pink-500 to-purple-500'}`}>
           <div className="w-full h-full rounded-full overflow-hidden bg-white relative">
             {/* Preview de imagen si existe */}
@@ -104,11 +110,11 @@ const FlashPlanItem = ({ flashPlan, onFlashPlanOpen }) => {  // ✅ Recibe la pr
                 </div>
               </div>
             ) : (
-              // Sin contenido, mostrar avatar del usuario
+              // Sin contenido, mostrar foto de perfil del creador
               <div className="w-full h-full">
-                {flashPlan.userPhoto ? (
+                {flashPlan.createdByPhotoURL || flashPlan.userPhoto ? (
                   <img 
-                    src={flashPlan.userPhoto} 
+                    src={flashPlan.createdByPhotoURL || flashPlan.userPhoto} 
                     alt={userDisplayName}
                     className="w-full h-full object-cover"
                   />
@@ -117,6 +123,13 @@ const FlashPlanItem = ({ flashPlan, onFlashPlanOpen }) => {  // ✅ Recibe la pr
                     {userDisplayName.charAt(0).toUpperCase()}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Badge de vistas - solo para el creador */}
+            {flashPlan.userId === currentUser?.uid && flashPlan.viewsCount > 0 && (
+              <div className="absolute bottom-0 right-0 bg-pink-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center border-2 border-white">
+                {flashPlan.viewsCount}
               </div>
             )}
           </div>

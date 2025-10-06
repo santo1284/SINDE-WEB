@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { X, MapPin, Camera, Clock, Calendar } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
 import { v4 as uuidv4 } from "uuid";
-import { getFirestore, doc, setDoc } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, updateDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
 
@@ -13,7 +13,8 @@ const containerStyle = {
   borderRadius: "12px",
 };
 
-// Versión responsiva para móviles
+
+
 const containerStyleMobile = {
   width: "100%",
   height: "180px",
@@ -21,7 +22,11 @@ const containerStyleMobile = {
 };
 const libraries = ["places", "geometry"];
 
-const PlanModal = ({ isOpen, onClose, onPlanCreated, perfilData }) => {
+const PlanModal = ({ isOpen, onClose, onPlanCreated, perfilData, planToEdit }) => {
+  // ✅ DETECTAR SI ESTAMOS EDITANDO
+  const isEditing = !!planToEdit;
+
+  // ✅ INICIALIZAR CON DATOS DEL PLAN SI EXISTE
   const [nuevoPlan, setNuevoPlan] = useState({
     title: '',
     description: '',
@@ -37,8 +42,47 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated, perfilData }) => {
     phoneNumber: ''
   });
 
+  // ✅ CARGAR DATOS DEL PLAN AL ABRIR MODAL PARA EDITAR
+  useEffect(() => {
+    if (planToEdit) {
+      // Convertir timestamp a formato de fecha YYYY-MM-DD
+      const dateObj = planToEdit.date ? new Date(planToEdit.date) : null;
+      const dateString = dateObj ? dateObj.toISOString().split('T')[0] : '';
+      
+      setNuevoPlan({
+        title: planToEdit.title || '',
+        description: planToEdit.description || '',
+        date: dateString,
+        timeString: planToEdit.timeString || '',
+        location: planToEdit.location || '',
+        latitude: planToEdit.latitude || null,
+        longitude: planToEdit.longitude || null,
+        locationAddress: planToEdit.locationAddress || '',
+        city: planToEdit.city || '',
+        state: planToEdit.state || '',
+        enableWhatsapp: planToEdit.enableWhatsapp || false,
+        phoneNumber: planToEdit.phoneNumber || ''
+      });
+      
+      // Si tiene coordenadas, mostrar el mapa
+      if (planToEdit.latitude && planToEdit.longitude) {
+        setCoords({
+          lat: planToEdit.latitude,
+          lng: planToEdit.longitude
+        });
+      }
+      
+      // Cargar imágenes existentes como previews
+      if (planToEdit.imageUrls && planToEdit.imageUrls.length > 0) {
+        setPreviewUrls(planToEdit.imageUrls);
+        setExistingImages(planToEdit.imageUrls);
+      }
+    }
+  }, [planToEdit]);
+
   const [imageFiles, setImageFiles] = useState([]);
   const [previewUrls, setPreviewUrls] = useState([]);
+  const [existingImages, setExistingImages] = useState([]); // ✅ Para imágenes ya existentes
   const [errores, setErrores] = useState({});
   const [creandoPlan, setCreandoPlan] = useState(false);
   const [coords, setCoords] = useState(null);
@@ -47,14 +91,12 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated, perfilData }) => {
   const db = getFirestore();
   const storage = getStorage();
 
-  // Google Maps Loader
-
   const { isLoaded } = useJsApiLoader({
-    id: 'shared-google-maps', // MISMO ID
+    id: 'shared-google-maps',
     googleMapsApiKey: 'AIzaSyCxjuEfWAO73CCvvkWyNA3dXGHc_EXOBMo',
-    libraries: libraries  // ✅ Usar la constante en lugar del array literal
+    libraries: libraries
   });
-  // Detectar tamaño de pantalla
+
   const [isMobile, setIsMobile] = useState(false);
   
   useEffect(() => {
@@ -67,9 +109,8 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated, perfilData }) => {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Geocodificar dirección escrita en el input
   useEffect(() => {
-    if (nuevoPlan.location && isLoaded && window.google) {
+    if (nuevoPlan.location && isLoaded && window.google && !isEditing) {
       const geocoder = new window.google.maps.Geocoder();
       geocoder.geocode({ address: nuevoPlan.location }, (results, status) => {
         if (status === "OK" && results[0]) {
@@ -84,9 +125,8 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated, perfilData }) => {
         }
       });
     }
-  }, [nuevoPlan.location, isLoaded]);
+  }, [nuevoPlan.location, isLoaded, isEditing]);
 
-  // Compresión de imagen (Canvas)
   const compressImage = (file, maxWidth = 800, quality = 0.8) => {
     return new Promise((resolve) => {
       const canvas = document.createElement('canvas');
@@ -107,7 +147,6 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated, perfilData }) => {
     });
   };
 
-  // SUBIR imágenes a Firebase
   const uploadImagesToFirebase = async (files, userId, planId) => {
     if (!files || files.length === 0) return [];
     const urls = [];
@@ -123,15 +162,17 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated, perfilData }) => {
     return urls;
   };
 
-  // Manejar imágenes
   const manejarImagenes = (filesList) => {
     if (!filesList || filesList.length === 0) return;
     const files = Array.from(filesList);
-    const espacioRestante = 5 - imageFiles.length;
+    const totalImagenes = existingImages.length + imageFiles.length;
+    const espacioRestante = 5 - totalImagenes;
+    
     if (espacioRestante <= 0) {
       setErrores(prev => ({ ...prev, imagenes: 'Máximo 5 imágenes permitidas' }));
       return;
     }
+    
     const toAdd = files.slice(0, espacioRestante);
     const newPreviews = toAdd.map(f => URL.createObjectURL(f));
     setImageFiles(prev => [...prev, ...toAdd]);
@@ -140,14 +181,20 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated, perfilData }) => {
   };
 
   const eliminarImagen = (index) => {
-    setImageFiles(prev => prev.filter((_, i) => i !== index));
-    setPreviewUrls(prev => {
-      URL.revokeObjectURL(prev[index]);
-      return prev.filter((_, i) => i !== index);
-    });
+    // Verificar si es una imagen existente o nueva
+    if (index < existingImages.length) {
+      // Eliminar imagen existente
+      setExistingImages(prev => prev.filter((_, i) => i !== index));
+      setPreviewUrls(prev => prev.filter((_, i) => i !== index));
+    } else {
+      // Eliminar imagen nueva
+      const newFileIndex = index - existingImages.length;
+      setImageFiles(prev => prev.filter((_, i) => i !== newFileIndex));
+      URL.revokeObjectURL(previewUrls[index]);
+      setPreviewUrls(prev => prev.filter((_, i) => i !== index));
+    }
   };
 
-  // Obtener ubicación actual
   const obtenerUbicacionActual = () => {
     if (!navigator.geolocation) {
       alert('La geolocalización no está soportada en este navegador');
@@ -171,7 +218,6 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated, perfilData }) => {
     );
   };
 
-  // Validación
   const validarFormulario = () => {
     const nuevosErrores = {};
     if (!nuevoPlan.title.trim()) nuevosErrores.title = 'El título es obligatorio';
@@ -182,7 +228,7 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated, perfilData }) => {
       const fechaSeleccionada = new Date(nuevoPlan.date);
       const hoy = new Date();
       hoy.setHours(0, 0, 0, 0);
-      if (fechaSeleccionada < hoy) {
+      if (fechaSeleccionada < hoy && !isEditing) {
         nuevosErrores.date = 'La fecha no puede ser anterior a hoy';
       }
     }
@@ -191,95 +237,206 @@ const PlanModal = ({ isOpen, onClose, onPlanCreated, perfilData }) => {
     if (nuevoPlan.enableWhatsapp && !nuevoPlan.phoneNumber.trim()) {
       nuevosErrores.phoneNumber = 'El número de WhatsApp es obligatorio';
     }
-    if (imageFiles.length === 0) {
+    
+    const totalImagenes = existingImages.length + imageFiles.length;
+    if (totalImagenes === 0) {
       nuevosErrores.imagenes = 'Debes seleccionar al menos una imagen';
     }
+    
     setErrores(nuevosErrores);
     return Object.keys(nuevosErrores).length === 0;
   };
 
-  // Crear Plan
-const crearPlan = async (e) => {
-  e.preventDefault();
-  if (!validarFormulario()) return;
-  setCreandoPlan(true);
-  try {
-    const currentUser = auth.currentUser;
-    if (!currentUser) throw new Error("Usuario no autenticado");
+  // ✅ FUNCIÓN ACTUALIZADA PARA CREAR O EDITAR
+  const crearPlan = async (e) => {
+    e.preventDefault();
+    if (!validarFormulario()) return;
+    setCreandoPlan(true);
     
-    // ✅ Obtener foto de Storage si no está en perfilData
-    let photoURL = perfilData?.fotoURL;
-    if (!photoURL) {
-      try {
-        const fotoRef = ref(storage, `profile_pictures/${currentUser.uid}`);
-        photoURL = await getDownloadURL(fotoRef);
-      } catch (error) {
-        console.log("No se encontró foto en Storage");
-        photoURL = null;
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Usuario no autenticado");
+      
+      let photoURL = perfilData?.fotoURL;
+      if (!photoURL) {
+        try {
+          const fotoRef = ref(storage, `profile_pictures/${currentUser.uid}`);
+          photoURL = await getDownloadURL(fotoRef);
+        } catch (error) {
+          photoURL = null;
+        }
       }
+      
+      const displayName = perfilData?.nombre || 
+                          currentUser.displayName || 
+                          (currentUser.email ? currentUser.email.split('@')[0] : 'Usuario');
+      
+      // ✅ Usar ID existente si estamos editando, o crear uno nuevo
+      const planId = isEditing ? planToEdit.id : uuidv4();
+      
+      // ✅ Subir nuevas imágenes si hay
+      const newImageUrls = imageFiles.length > 0 
+        ? await uploadImagesToFirebase(imageFiles, currentUser.uid, planId)
+        : [];
+      
+      // ✅ Combinar imágenes existentes con nuevas
+      const allImageUrls = [...existingImages, ...newImageUrls];
+      
+      const dateMs = new Date(`${nuevoPlan.date}T${nuevoPlan.timeString}`).getTime();
+      
+      const planData = {
+        title: nuevoPlan.title.trim(),
+        description: nuevoPlan.description.trim(),
+        date: dateMs || 0,
+        timeString: nuevoPlan.timeString,
+        location: nuevoPlan.location.trim(),
+        latitude: nuevoPlan.latitude,
+        longitude: nuevoPlan.longitude,
+        locationAddress: nuevoPlan.locationAddress || null,
+        city: nuevoPlan.city || null,
+        state: nuevoPlan.state || null,
+        imageUrls: allImageUrls,
+        enableWhatsapp: !!nuevoPlan.enableWhatsapp,
+        phoneNumber: nuevoPlan.enableWhatsapp ? (nuevoPlan.phoneNumber || '').trim() : '',
+      };
+      
+      // ✅ DECIDIR SI CREAR O ACTUALIZAR
+      if (isEditing) {
+        // ACTUALIZAR plan existente
+        const planRef = doc(db, 'planes', planId);
+        await updateDoc(planRef, {
+          ...planData,
+          updatedAt: Date.now()
+        });
+       if (isEditing) {
+  const planRef = doc(db, 'planes', planId);
+  await updateDoc(planRef, {
+    ...planData,
+    updatedAt: Date.now()
+  });
+  
+  // Limpiar
+  previewUrls.forEach(url => {
+    if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+  });
+  setPreviewUrls([]);
+  setImageFiles([]);
+  setExistingImages([]);
+  setNuevoPlan({
+    title: '',
+    description: '',
+    date: '',
+    timeString: '',
+    location: '',
+    latitude: null,
+    longitude: null,
+    locationAddress: '',
+    city: '',
+    state: '',
+    enableWhatsapp: false,
+    phoneNumber: ''
+  });
+  setErrores({});
+  
+  // Notificar al padre que fue exitoso
+  if (onPlanCreated) onPlanCreated({ id: planId, ...planData, isEdit: true });
+  onClose();
+  
+} else {
+  // CREAR nuevo plan
+  await setDoc(doc(db, 'planes', planId), {
+    id: planId,
+    userId: currentUser.uid,
+    createdByName: displayName,
+    createdByPhotoURL: photoURL,
+    createdAt: Date.now(),
+    ...planData,
+    likes: [],
+    participants: [],
+    commentCount: 0,
+    shares: 0
+  });
+  
+  // Limpiar
+  previewUrls.forEach(url => {
+    if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+  });
+  setPreviewUrls([]);
+  setImageFiles([]);
+  setExistingImages([]);
+  setNuevoPlan({
+    title: '',
+    description: '',
+    date: '',
+    timeString: '',
+    location: '',
+    latitude: null,
+    longitude: null,
+    locationAddress: '',
+    city: '',
+    state: '',
+    enableWhatsapp: false,
+    phoneNumber: ''
+  });
+  setErrores({});
+  
+  // Notificar al padre que fue exitoso
+  if (onPlanCreated) onPlanCreated({ id: planId, ...planData, isEdit: false });
+  onClose();
+}
+      } else {
+        // CREAR nuevo plan
+        await setDoc(doc(db, 'planes', planId), {
+          id: planId,
+          userId: currentUser.uid,
+          createdByName: displayName,
+          createdByPhotoURL: photoURL,
+          createdAt: Date.now(),
+          ...planData,
+          likes: [],
+          participants: [],
+          commentCount: 0,
+          shares: 0
+        });
+      }
+      
+     if (onPlanCreated) onPlanCreated({ id: planId, ...planData });
+
+// Esperar a que el usuario cierre el modal de éxito antes de limpiar
+// NO llamar onClose() aquí, lo haremos cuando cierre el modal de éxito
+      
+      // Limpiar
+      previewUrls.forEach(url => {
+        if (url.startsWith('blob:')) {
+          URL.revokeObjectURL(url);
+        }
+      });
+      
+      setPreviewUrls([]);
+      setImageFiles([]);
+      setExistingImages([]);
+      setNuevoPlan({
+        title: '',
+        description: '',
+        date: '',
+        timeString: '',
+        location: '',
+        latitude: null,
+        longitude: null,
+        locationAddress: '',
+        city: '',
+        state: '',
+        enableWhatsapp: false,
+        phoneNumber: ''
+      });
+      setErrores({});
+    } catch (error) {
+      console.error("❌ Error al guardar plan:", error);
+      setErrores({ general: "Error al guardar el plan: " + (error?.message || 'desconocido') });
+    } finally {
+      setCreandoPlan(false);
     }
-    
-    const displayName = perfilData?.nombre || 
-                        currentUser.displayName || 
-                        (currentUser.email ? currentUser.email.split('@')[0] : 'Usuario');
-    
-    const planId = uuidv4();
-    const imageUrls = await uploadImagesToFirebase(imageFiles, currentUser.uid, planId);
-    const dateMs = new Date(`${nuevoPlan.date}T${nuevoPlan.timeString}`).getTime();
-    
-    const planData = {
-      id: planId,
-      userId: currentUser.uid,
-      createdByName: displayName,
-      createdByPhotoURL: photoURL,
-      createdAt: Date.now(),
-      title: nuevoPlan.title.trim(),
-      description: nuevoPlan.description.trim(),
-      date: dateMs || 0,
-      timeString: nuevoPlan.timeString,
-      location: nuevoPlan.location.trim(),
-      latitude: nuevoPlan.latitude,
-      longitude: nuevoPlan.longitude,
-      locationAddress: nuevoPlan.locationAddress || null,
-      city: nuevoPlan.city || null,
-      state: nuevoPlan.state || null,
-      imageUrls,
-      enableWhatsapp: !!nuevoPlan.enableWhatsapp,
-      phoneNumber: nuevoPlan.enableWhatsapp ? (nuevoPlan.phoneNumber || '').trim() : '',
-      likes: [],
-      participants: [],
-      commentCount: 0,
-      shares: 0
-    };
-    
-    await setDoc(doc(db, 'planes', planId), planData);
-    if (onPlanCreated) onPlanCreated({ id: planId, ...planData });
-    previewUrls.forEach(url => URL.revokeObjectURL(url));
-    setPreviewUrls([]);
-    setImageFiles([]);
-    setNuevoPlan({
-      title: '',
-      description: '',
-      date: '',
-      timeString: '',
-      location: '',
-      latitude: null,
-      longitude: null,
-      locationAddress: '',
-      city: '',
-      state: '',
-      enableWhatsapp: false,
-      phoneNumber: ''
-    });
-    setErrores({});
-    onClose();
-  } catch (error) {
-    console.error("❌ Error al crear plan:", error);
-    setErrores({ general: "Error al crear el plan: " + (error?.message || 'desconocido') });
-  } finally {
-    setCreandoPlan(false);
-  }
-};
+  };
 
   if (!isOpen) return null;
 
@@ -289,8 +446,10 @@ const crearPlan = async (e) => {
         {/* Header */}
         <div className="flex items-center p-4 sm:p-6 border-b bg-gradient-to-r from-pink-500 to-purple-600">
           <div className="flex-1 flex justify-center items-center">
-            <h2 className="text-lg sm:text-xl font-bold text-white text-center">¡Crear Plan Increíble!</h2>
-            <span className="text-xl sm:text-2xl ml-2">✨</span>
+            <h2 className="text-lg sm:text-xl font-bold text-white text-center">
+              {isEditing ? '✏️ Editar Plan' : '¡Crear Plan Increíble!'}
+            </h2>
+            <span className="text-xl sm:text-2xl ml-2">{isEditing ? '📝' : '✨'}</span>
           </div>
           <button
             onClick={onClose}
@@ -349,7 +508,6 @@ const crearPlan = async (e) => {
 
           {/* Fecha y Hora */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            {/* Fecha */}
             <div>
               <label className="text-sm font-semibold text-gray-600 mb-2 flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-pink-500" />
@@ -364,7 +522,7 @@ const crearPlan = async (e) => {
                     focus:outline-none focus:ring-2 focus:ring-pink-400 focus:border-pink-400
                     ${errores.date ? 'border-red-300 bg-red-50' : 'border-gray-300'}
                   `}
-                  min={new Date().toISOString().split('T')[0]}
+                  min={isEditing ? undefined : new Date().toISOString().split('T')[0]}
                   required
                 />
                 <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-pink-500 w-4 h-4 sm:w-5 sm:h-5" />
@@ -372,7 +530,6 @@ const crearPlan = async (e) => {
               {errores.date && <p className="text-red-500 text-xs mt-2">{errores.date}</p>}
             </div>
 
-            {/* Hora */}
             <div>
               <label className="text-sm font-semibold text-gray-600 mb-2 flex items-center gap-2">
                 <Clock className="w-4 h-4 text-purple-500" />
@@ -485,7 +642,7 @@ const crearPlan = async (e) => {
                 multiple
                 onChange={(e) => manejarImagenes(e.target.files)}
                 className="w-full text-sm"
-                disabled={imageFiles.length >= 5}
+                disabled={existingImages.length + imageFiles.length >= 5}
               />
               <p className="text-xs sm:text-sm text-gray-500 mt-2">
                 Formatos: JPG, PNG. Las imágenes se optimizarán automáticamente.
@@ -526,13 +683,20 @@ const crearPlan = async (e) => {
             >
               Cancelar
             </button>
-            <button
-              type="submit"
-              disabled={creandoPlan}
-              className="w-full sm:w-auto px-4 sm:px-6 py-3 rounded-lg bg-gradient-to-r from-pink-500 to-purple-600 text-white hover:opacity-90 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base min-h-[48px] font-medium"
-            >
-              {creandoPlan ? 'Creando...' : 'Crear Plan 🎉'}
-            </button>
+           <button
+            type="submit"
+            disabled={creandoPlan}
+            className="w-full sm:w-auto px-4 sm:px-6 py-3 rounded-lg bg-gradient-to-r from-pink-500 to-purple-600 text-white hover:opacity-90 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base min-h-[48px] font-medium flex items-center justify-center gap-2"
+          >
+            {creandoPlan ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>{isEditing ? 'Actualizando plan...' : 'Creando plan...'}</span>
+              </>
+            ) : (
+              <span>{isEditing ? 'Actualizar Plan ✏️' : 'Crear Plan 🎉'}</span>
+            )}
+          </button>
           </div>
         </form>
       </div>

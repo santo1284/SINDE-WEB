@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { collection, addDoc, Timestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../firebase/firebase-config'; // Agregar storage aquí
+import { collection, addDoc, Timestamp, doc as firestoreDoc, getDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, getStorage, ref as storageRef } from 'firebase/storage';
+import { db, storage } from '../firebase/firebase-config';
 import { useAuth } from '../context/AuthContext';
 
 const CreateFlashPlan = ({ onClose, onSuccess }) => {
@@ -40,15 +40,51 @@ const CreateFlashPlan = ({ onClose, onSuccess }) => {
         imageUrl = await getDownloadURL(snapshot.ref);
       }
 
-      // Crear el Flash Plan usando la estructura de tu app móvil
+      // Obtener datos del perfil del usuario
+      let createdByName = currentUser.displayName || currentUser.email?.split('@')[0] || 'Usuario';
+      let createdByPhotoURL = currentUser.photoURL || null;
+
+      try {
+        // Intentar obtener nombre desde Firestore
+        const perfilRef = firestoreDoc(db, 'perfil', currentUser.uid);
+        const perfilSnap = await getDoc(perfilRef);
+        
+        if (perfilSnap.exists()) {
+          const profileData = perfilSnap.data();
+          createdByName = profileData.nombre || createdByName;
+          createdByPhotoURL = profileData.fotoURL || createdByPhotoURL;
+        }
+        
+        // Si no hay foto en Firestore, buscar en Storage
+        if (!createdByPhotoURL) {
+          try {
+            const storageInstance = getStorage();
+            const fotoRef = storageRef(storageInstance, `profile_pictures/${currentUser.uid}`);
+            createdByPhotoURL = await getDownloadURL(fotoRef);
+          } catch (storageError) {
+            console.log('No hay foto en Storage');
+          }
+        }
+      } catch (error) {
+        console.log('Error obteniendo datos del perfil:', error);
+      }
+
+      // Crear el Flash Plan con todos los datos
       const flashPlanData = {
         userId: currentUser.uid,
         userName: currentUser.displayName || currentUser.email || '',
         userPhoto: currentUser.photoURL || '',
         content: content.trim(),
-        imageUrl: imageUrl, // Usar imageUrl en lugar de image
-        timestamp: Timestamp.now(), // Usar timestamp en lugar de createdAt
-        viewers: []
+        imageUrl: imageUrl,
+        timestamp: Timestamp.now(),
+        viewers: [],
+        // Datos del creador
+        createdByName: createdByName,
+        createdByPhotoURL: createdByPhotoURL,
+        // Sistema de vistas
+        views: [],
+        viewsCount: 0,
+        viewsDetails: {}
       };
 
       await addDoc(collection(db, 'flashPlans'), flashPlanData);
