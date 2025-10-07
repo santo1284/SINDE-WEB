@@ -12,7 +12,13 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase-config';
 
-const NotificationsPanel = ({ user, isOpen, onClose, onNavigateToPlan }) => {  // ✅ Nueva prop
+const NotificationsPanel = ({ 
+  user, 
+  isOpen, 
+  onClose, 
+  onNavigateToPlan,
+  onOpenComments  // ✅ AGREGAR ESTA LÍNEA
+}) => {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -43,10 +49,11 @@ const NotificationsPanel = ({ user, isOpen, onClose, onNavigateToPlan }) => {  /
         return timeB - timeA;
       });
       
+      console.log('📬 Notificaciones cargadas:', notificationsData.length); // ✅ Debug
       setNotifications(notificationsData);
       setLoading(false);
     }, (error) => {
-      console.error('Error cargando notificaciones:', error);
+      console.error('❌ Error cargando notificaciones:', error);
       setLoading(false);
     });
 
@@ -54,39 +61,41 @@ const NotificationsPanel = ({ user, isOpen, onClose, onNavigateToPlan }) => {  /
   }, [isOpen, user?.uid]);
 
   // ✅ Manejar clic en notificación
-  const handleNotificationClick = async (notification) => {
-    try {
-      // Marcar como leída
-      if (!notification.read) {
-        await marcarComoLeida(notification.id);
-      }
-
-      // Si tiene planId, navegar al plan
-      if (notification.planId && onNavigateToPlan) {
-        // Obtener los datos del plan
-        const planRef = doc(db, 'planes', notification.planId);
-        const planSnap = await getDoc(planRef);
-        
-        if (planSnap.exists()) {
-          const planData = {
-            id: planSnap.id,
-            ...planSnap.data()
-          };
-          
-          // Cerrar el panel de notificaciones
-          onClose();
-          
-          // Abrir el modal del plan
-          onNavigateToPlan(planData);
-        } else {
-          console.log('El plan ya no existe');
-          // Opcional: mostrar mensaje al usuario
-        }
-      }
-    } catch (error) {
-      console.error('Error navegando al plan:', error);
+const handleNotificationClick = async (notification) => {
+  try {
+    // Marcar como leída
+    if (!notification.read) {
+      await marcarComoLeida(notification.id);
     }
-  };
+
+    // ✅ Si es una notificación de comentario, abrir modal de comentarios
+    if (notification.type === 'comment' && notification.planId && onOpenComments) {
+      onClose();
+      onOpenComments(notification.planId);
+      return;
+    }
+
+    // ✅ Para otros tipos de notificación, abrir modal de detalles del plan
+    if (notification.planId && onNavigateToPlan) {
+      const planRef = doc(db, 'planes', notification.planId);
+      const planSnap = await getDoc(planRef);
+      
+      if (planSnap.exists()) {
+        const planData = {
+          id: planSnap.id,
+          ...planSnap.data()
+        };
+        
+        onClose();
+        onNavigateToPlan(planData);
+      } else {
+        console.log('⚠️ El plan ya no existe');
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error navegando al plan:', error);
+  }
+};
 
   // Marcar notificación como leída
   const marcarComoLeida = async (notificationId) => {
@@ -148,125 +157,135 @@ const NotificationsPanel = ({ user, isOpen, onClose, onNavigateToPlan }) => {  /
   if (!isOpen) return null;
 
   return (
-    <div className="fixed top-24 right-6 bg-white/10 backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/20 w-96 z-40 max-h-[32rem] flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between p-6 border-b border-white/20">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-r from-pink-500 to-purple-500 rounded-2xl flex items-center justify-center">
-            <Bell className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h3 className="text-xl font-bold text-white">Notificaciones</h3>
-            {notifications.length > 0 && (
-              <p className="text-xs text-white/60">
-                {notifications.filter(n => !n.read).length} sin leer
-              </p>
-            )}
-          </div>
-        </div>
-        <button
-          onClick={onClose}
-          className="text-white/70 hover:text-white p-2 hover:bg-white/10 rounded-xl transition-colors"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-
-      {/* Lista de notificaciones */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-8 h-8 border-4 border-pink-500/30 border-t-pink-500 rounded-full animate-spin"></div>
-          </div>
-        ) : notifications.length > 0 ? (
-          <div className="space-y-3">
-            {notifications.map((notification) => (
-              <div
-                key={notification.id}
-                onClick={() => handleNotificationClick(notification)}  // ✅ Manejar clic
-                className={`relative group rounded-2xl p-4 transition-all cursor-pointer ${
-                  notification.read
-                    ? 'bg-white/5 hover:bg-white/10'
-                    : 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 border-l-4 border-blue-400 hover:from-blue-500/30 hover:to-purple-500/30'
-                }`}
-              >
-                {/* Botón eliminar */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    eliminarNotificacion(notification.id);
-                  }}
-                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-white/20 rounded-lg"
-                >
-                  <X className="w-4 h-4 text-white/70" />
-                </button>
-
-                <div className="flex items-start gap-3">
-                  {/* Icono */}
-                  <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center flex-shrink-0">
-                    {getNotificationIcon(notification.type)}
-                  </div>
-
-                  {/* Contenido */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white font-medium leading-snug mb-1">
-                      {notification.message}
-                    </p>
-                    {notification.planTitle && (
-                      <p className="text-white/70 text-sm truncate mb-2">
-                        📍 {notification.planTitle}
-                      </p>
-                    )}
-                    {notification.commentText && (
-                      <p className="text-white/60 text-xs italic mb-2 line-clamp-2">
-                        "{notification.commentText}"
-                      </p>
-                    )}
-                    <div className="flex items-center gap-2 text-white/60 text-xs">
-                      <Clock className="w-3 h-3" />
-                      {getTimeAgo(notification.timestamp || notification.createdAt)}
-                    </div>
-                  </div>
-
-                  {/* Indicador de no leída */}
-                  {!notification.read && (
-                    <div className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-2 animate-pulse"></div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-12">
-            <div className="text-6xl mb-4">🔔</div>
-            <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20">
-              <h4 className="text-lg font-bold text-white mb-2">
-                No hay notificaciones
-              </h4>
-              <p className="text-white/60 text-sm">
-                Te avisaremos cuando haya algo nuevo
-              </p>
+    <>
+      {/* ✅ Overlay para cerrar al hacer clic afuera */}
+      <div 
+        className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60]" 
+        onClick={onClose}
+      />
+      
+      {/* ✅ Panel de notificaciones con z-index más alto */}
+      <div className="fixed top-20 right-4 md:right-6 bg-white/10 backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/20 w-[calc(100vw-2rem)] md:w-96 z-[70] max-h-[85vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-white/20">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-r from-pink-500 to-purple-500 rounded-2xl flex items-center justify-center">
+              <Bell className="w-5 h-5 text-white" />
             </div>
+            <div>
+              <h3 className="text-xl font-bold text-white">Notificaciones</h3>
+              {notifications.length > 0 && (
+                <p className="text-xs text-white/60">
+                  {notifications.filter(n => !n.read).length} sin leer
+                </p>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-white/70 hover:text-white p-2 hover:bg-white/10 rounded-xl transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Lista de notificaciones */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <div className="w-12 h-12 border-4 border-pink-500/30 border-t-pink-500 rounded-full animate-spin mb-4"></div>
+              <p className="text-white/70 text-sm">Cargando notificaciones...</p>
+            </div>
+          ) : notifications.length > 0 ? (
+            <div className="space-y-3">
+              {notifications.map((notification) => (
+                <div
+                  key={notification.id}
+                  onClick={() => handleNotificationClick(notification)}
+                  className={`relative group rounded-2xl p-4 transition-all cursor-pointer ${
+                    notification.read
+                      ? 'bg-white/5 hover:bg-white/10'
+                      : 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 border-l-4 border-blue-400 hover:from-blue-500/30 hover:to-purple-500/30'
+                  }`}
+                >
+                  {/* Botón eliminar */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      eliminarNotificacion(notification.id);
+                    }}
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-white/20 rounded-lg"
+                  >
+                    <X className="w-4 h-4 text-white/70" />
+                  </button>
+
+                  <div className="flex items-start gap-3">
+                    {/* Icono */}
+                    <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                      {getNotificationIcon(notification.type)}
+                    </div>
+
+                    {/* Contenido */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-medium leading-snug mb-1">
+                        {notification.message}
+                      </p>
+                      {notification.planTitle && (
+                        <p className="text-white/70 text-sm truncate mb-2">
+                          📍 {notification.planTitle}
+                        </p>
+                      )}
+                      {notification.commentText && (
+                        <p className="text-white/60 text-xs italic mb-2 line-clamp-2">
+                          "{notification.commentText}"
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 text-white/60 text-xs">
+                        <Clock className="w-3 h-3" />
+                        {getTimeAgo(notification.timestamp || notification.createdAt)}
+                      </div>
+                    </div>
+
+                    {/* Indicador de no leída */}
+                    {!notification.read && (
+                      <div className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-2 animate-pulse"></div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <div className="text-6xl mb-4">🔔</div>
+              <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20">
+                <h4 className="text-lg font-bold text-white mb-2">
+                  No hay notificaciones
+                </h4>
+                <p className="text-white/60 text-sm">
+                  Te avisaremos cuando haya algo nuevo
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {notifications.length > 0 && (
+          <div className="border-t border-white/20 p-4">
+            <button
+              onClick={() => {
+                notifications.forEach(n => {
+                  if (!n.read) marcarComoLeida(n.id);
+                });
+              }}
+              className="w-full py-2 px-4 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-colors text-sm font-medium"
+            >
+              Marcar todas como leídas
+            </button>
           </div>
         )}
       </div>
-
-      {/* Footer */}
-      {notifications.length > 0 && (
-        <div className="border-t border-white/20 p-4">
-          <button
-            onClick={() => {
-              notifications.forEach(n => {
-                if (!n.read) marcarComoLeida(n.id);
-              });
-            }}
-            className="w-full py-2 px-4 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-colors text-sm font-medium"
-          >
-            Marcar todas como leídas
-          </button>
-        </div>
-      )}
-    </div>
+    </>
   );
 };
 

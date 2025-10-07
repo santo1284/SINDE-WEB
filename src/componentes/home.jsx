@@ -176,6 +176,35 @@ const [planesParticipando, setPlanesParticipando] = useState([]);
       plan: plan
     });
   };
+  // ✅ AGREGAR ESTA FUNCIÓN NUEVA
+const abrirModalComentariosDirecto = async (planId) => {
+  try {
+    // Obtener los datos del plan
+    const planRef = doc(db, 'planes', planId);
+    const planSnap = await getDoc(planRef);
+    
+    if (planSnap.exists()) {
+      const planData = {
+        id: planSnap.id,
+        ...planSnap.data()
+      };
+      
+      // Abrir modal de comentarios
+      setModalComentarios({
+        isOpen: true,
+        planId: planData.id,
+        planTitle: planData.title
+      });
+      
+      // Cargar comentarios
+      await cargarTodosLosComentarios(planData.id);
+    } else {
+      console.log('El plan no existe');
+    }
+  } catch (error) {
+    console.error('Error abriendo modal de comentarios:', error);
+  }
+};
   
   const handlePlanCreated = (newPlan) => {
   console.log('Plan creado/actualizado:', newPlan);
@@ -353,16 +382,8 @@ useEffect(() => {
   fetchFoto();
 }, [user?.uid, perfilData]);
 
-// Cargar fotos y nombres de creadores de planes antiguos
+// ✅ HOOK SEPARADO PARA FAVORITOS Y PARTICIPACIONES
 useEffect(() => {
-  const actualizarPlanesAntiguos = async () => {
-    const planesSinDatos = planes.filter(plan => 
-      (!plan.createdByPhotoURL || !plan.createdByName) && plan.userId
-    );
-
-    if (planesSinDatos.length === 0) return;
-
-    useEffect(() => {
   if (!user?.uid || !planes.length) return;
 
   const favoritos = planes.filter(plan => plan.likes?.includes(user.uid));
@@ -372,7 +393,16 @@ useEffect(() => {
   setPlanesParticipando(participando);
 }, [planes, user?.uid]);
 
-   // console.log(`🔄 Actualizando ${planesSinDatos.length} planes...`);
+// ✅ HOOK SEPARADO PARA ACTUALIZAR PLANES ANTIGUOS
+useEffect(() => {
+  const actualizarPlanesAntiguos = async () => {
+    const planesSinDatos = planes.filter(plan => 
+      (!plan.createdByPhotoURL || !plan.createdByName) && plan.userId
+    );
+
+    if (planesSinDatos.length === 0) return;
+
+    //console.log(`🔄 Actualizando ${planesSinDatos.length} planes...`);
 
     for (const plan of planesSinDatos) {
       try {
@@ -386,7 +416,7 @@ useEffect(() => {
           if (perfilSnap.exists()) {
             actualizaciones.createdByName = perfilSnap.data().nombre || 'Usuario';
             necesitaActualizar = true;
-          //  console.log(`✅ Nombre encontrado para plan ${plan.id}: ${actualizaciones.createdByName}`);
+           // console.log(`✅ Nombre encontrado para plan ${plan.id}: ${actualizaciones.createdByName}`);
           }
         }
 
@@ -405,10 +435,10 @@ useEffect(() => {
         if (necesitaActualizar) {
           const planRef = doc(db, 'planes', plan.id);
           await updateDoc(planRef, actualizaciones);
-         // console.log(`✅ Plan ${plan.id} actualizado`);
+          console.log(`✅ Plan ${plan.id} actualizado`);
         }
       } catch (error) {
-       // console.error(`❌ Error actualizando plan ${plan.id}:`, error);
+        //console.error(`❌ Error actualizando plan ${plan.id}:`, error);
       }
     }
   };
@@ -1435,7 +1465,8 @@ const [perfilPublicoAbierto, setPerfilPublicoAbierto] = useState({
         user={user}
         isOpen={showNotifications}
         onClose={() => setShowNotifications(false)}
-        onNavigateToPlan={abrirModalPlanDetails} 
+        onNavigateToPlan={abrirModalPlanDetails}
+        onOpenComments={abrirModalComentariosDirecto}  // ✅ AGREGAR ESTA LÍNEA 
       />
 
       {/* Modal de Confirmación de Eliminación */}
