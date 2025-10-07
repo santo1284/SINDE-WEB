@@ -262,82 +262,102 @@ function MisFavoritos({ user, onBack, onShowPerfil }) {
               const uniqueImages = [...new Set(plan.imageUrls || [])];
               
               return (
-                <div 
-                  key={plan.id} 
+                <div
+                  key={plan.id}
                   onClick={() => abrirModalPlan(plan)}
-                  className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden hover:shadow-2xl transition-all duration-300 hover:scale-105 cursor-pointer"
+                  className="bg-white/10 backdrop-blur-xl rounded-3xl overflow-hidden border border-white/20 hover:bg-white/20 transition-all duration-300 hover:scale-105 cursor-pointer group"
                 >
-                  <div className="p-4 flex items-center gap-3 border-b border-gray-100">
+                  <div className="p-4 flex items-center gap-3 border-b border-white/10">
                     {plan.createdByPhotoURL ? (
-                      <img src={plan.createdByPhotoURL} alt={plan.createdByName} className="w-10 h-10 rounded-full object-cover" />
+                      <img 
+                        src={plan.createdByPhotoURL} 
+                        alt={plan.createdByName} 
+                        className="w-10 h-10 rounded-full object-cover ring-2 ring-white/30" 
+                      />
                     ) : (
-                      <div className="w-10 h-10 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                      <div className="w-10 h-10 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold ring-2 ring-white/30">
                         {(plan.createdByName?.charAt(0) || 'U').toUpperCase()}
                       </div>
                     )}
-                    <div className="flex-1">
-                      <p className="text-gray-800 font-bold text-sm">{plan.createdByName || 'Usuario'}</p>
-                      <p className="text-gray-500 text-xs">
-                        {plan.createdAt ? new Date(plan.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : ''}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-bold text-sm truncate">
+                        {plan.createdByName || 'Usuario'}
+                      </p>
+                      <p className="text-white/60 text-xs">
+                        {plan.createdAt 
+                          ? new Date(plan.createdAt).toLocaleDateString('es-ES', { 
+                              day: '2-digit', 
+                              month: 'short' 
+                            }) 
+                          : ''}
                       </p>
                     </div>
                   </div>
 
                   {uniqueImages.length > 0 && (
-                    <div className="relative h-48">
-                      <img src={uniqueImages[0]} alt={plan.title} className="w-full h-full object-cover" />
+                    <div className="relative h-48 overflow-hidden">
+                      <img 
+                        src={uniqueImages[0]} 
+                        alt={plan.title} 
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
                     </div>
                   )}
 
                   <div className="p-4 space-y-3">
-                    <h3 className="text-xl font-bold text-gray-900 line-clamp-2">{plan.title}</h3>
+                    <h3 className="text-xl font-bold text-white line-clamp-2 group-hover:text-red-300 transition-colors">
+                      {plan.title}
+                    </h3>
                     
                     {plan.date && (
-                      <div className="flex items-center gap-2 text-gray-600 bg-blue-50 rounded-xl p-2">
-                        <Calendar className="w-4 h-4 text-blue-600" />
+                      <div className="flex items-center gap-2 text-white/70 bg-white/5 rounded-xl p-2">
+                        <Calendar className="w-4 h-4" />
                         <span className="text-sm font-medium">{formatDate(plan.date)}</span>
                       </div>
                     )}
 
                     {plan.location && (
-                      <div className="flex items-center gap-2 text-gray-600 bg-purple-50 rounded-xl p-2">
-                        <MapPin className="w-4 h-4 text-purple-600" />
+                      <div className="flex items-center gap-2 text-white/70 bg-white/5 rounded-xl p-2">
+                        <MapPin className="w-4 h-4" />
                         <span className="text-sm truncate font-medium">{plan.location}</span>
                       </div>
                     )}
 
-                    <p className="text-gray-600 text-sm line-clamp-2">{plan.description}</p>
+                    <p className="text-white/80 text-sm line-clamp-2 leading-relaxed">
+                      {plan.description}
+                    </p>
 
-                    <div className="flex items-center justify-between pt-3 border-t border-gray-100 gap-1">
+                    <div className="flex items-center justify-between pt-3 border-t border-white/20 gap-1">
                       <button
                         onClick={(e) => handleToggleLike(e, plan)}
-                        className="flex items-center gap-1 hover:bg-gray-50 px-2 py-2 rounded-lg transition-colors"
+                        className="flex items-center gap-1 hover:bg-white/10 px-2 py-2 rounded-lg transition-colors"
                       >
-                        <Heart className={`w-5 h-5 ${plan.likes?.includes(user.uid) ? 'fill-red-500 text-red-500' : 'text-gray-600'}`} />
-                        <span className="text-xs font-bold text-gray-700">{plan.likes?.length || 0}</span>
+                        <Heart className={`w-4 h-4 ${plan.likes?.includes(user.uid) ? 'fill-red-500 text-red-500' : 'text-white/70'}`} />
+                        <span className="text-white/70 text-xs">{plan.likes?.length || 0}</span>
                       </button>
 
                       <button
                         onClick={(e) => handleToggleParticipation(e, plan)}
-                        className={`flex items-center gap-1 px-2 py-2 rounded-lg ${plan.participants?.includes(user.uid) ? 'bg-green-50 text-green-600' : 'hover:bg-gray-50 text-gray-600'}`}
+                        className={`flex items-center gap-1 px-2 py-2 rounded-lg ${plan.participants?.includes(user.uid) ? 'bg-green-500/20' : 'hover:bg-white/10'}`}
                       >
-                        <Check className="w-4 h-4" />
-                        <span className="text-xs font-medium">{plan.participants?.length || 0}</span>
+                        <Check className="w-4 h-4 text-green-500" />
+                        <span className="text-white font-bold text-xs">{plan.participants?.length || 0}</span>
                       </button>
 
                       <button
                         onClick={(e) => abrirModalComentarios(e, plan)}
-                        className="flex items-center gap-1 hover:bg-gray-50 px-2 py-2 rounded-lg transition-colors"
+                        className="flex items-center gap-1 hover:bg-white/10 px-2 py-2 rounded-lg transition-colors"
                       >
-                        <MessageCircle className="w-4 h-4 text-gray-600" />
-                        <span className="text-xs text-gray-600">{plan.commentCount || 0}</span>
+                        <MessageCircle className="w-4 h-4 text-white/70" />
+                        <span className="text-white/70 text-xs">{plan.commentCount || 0}</span>
                       </button>
 
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleSharePlan(plan); }} 
-                        className="flex items-center gap-1 hover:bg-gray-50 px-2 py-2 rounded-lg transition-colors"
+                      <button
+                        onClick={(e) => handleSharePlan(e, plan)}
+                        className="flex items-center gap-1 hover:bg-white/10 px-2 py-2 rounded-lg transition-colors"
                       >
-                        <Share2 className="w-4 h-4 text-gray-600" />
+                        <Share2 className="w-4 h-4 text-white/70" />
                       </button>
                     </div>
                   </div>
