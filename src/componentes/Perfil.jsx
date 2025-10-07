@@ -1,4 +1,4 @@
-// Perfil.jsx - Diseño Mejorado con Estilo Moderno e Interacciones
+// Perfil.jsx - Versión Completa con Correcciones Responsive
 import React, { useEffect, useState } from "react";
 import { auth, db, storage } from "../firebase/firebase-config";
 import {
@@ -515,8 +515,8 @@ return (
           </div>
         </div>
 
-        <div className="flex justify-center">
-          <div className="flex bg-gray-100 rounded-2xl p-2 gap-2">
+      <div className="flex justify-center px-2">
+  <div className="flex flex-wrap justify-center bg-gray-100 rounded-2xl p-2 gap-2 w-full max-w-2xl">
             {[
               { key: "info", label: "Información", icon: User },
               { key: "planes", label: "Mis Planes", icon: Calendar },
@@ -534,7 +534,7 @@ return (
                   }`}
                 >
                   <IconComponent className="w-4 h-4" />
-                  <span>{tab.label}</span>
+                  <span className="hidden sm:inline">{tab.label}</span>
                 </button>
               );
             })}
@@ -606,9 +606,9 @@ return (
                       <div className={`bg-gradient-to-br ${item.gradient} p-4 rounded-2xl shadow-lg group-hover:scale-110 transition-transform duration-300`}>
                         <IconComponent className="w-6 h-6 text-white" />
                       </div>
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-gray-600 mb-1">{item.label}</p>
-                        <p className="text-lg font-bold text-gray-800">{item.value || "No especificado"}</p>
+                        <p className="text-lg font-bold text-gray-800 break-all">{item.value || "No especificado"}</p>
                       </div>
                     </div>
                   </div>
@@ -620,14 +620,10 @@ return (
 
         {activeTab === "planes" && (
           <div>
-          <div className="grid grid-cols-3 items-center mb-8">
-            <div></div>
-            <h2 className="text-3xl font-bold text-gray-800 text-center mb-10">
+         <div className="mb-8">
+          <h2 className="text-3xl font-bold text-gray-800 text-center mb-10">
               Mis Planes
                </h2>
-              <span className="justify-self-end bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700 px-4 py-2 rounded-full text-sm font-bold border border-purple-200">
-                {planes.length} planes creados
-              </span>
             </div>
 
             {planes.length > 0 ? (
@@ -729,17 +725,17 @@ return (
                           </div>
                         )}
 
-                        <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                        <div className="flex items-center justify-between pt-4 border-t border-gray-100 gap-1">
                           <button 
                             onClick={(e) => {
                               e.stopPropagation();
                               handlePlanInteraction(plan.id, 'like');
                             }}
-                            className="relative flex items-center hover:bg-gray-50 px-3 py-2 rounded-lg transition-colors group"
+                            className="relative flex items-center hover:bg-gray-50 px-2 py-2 rounded-lg transition-colors group"
                           >
                             <div className="relative">
                               <Heart 
-                                className={`w-7 h-7 ${interactions.isLiked ? 'fill-red-500 text-red-500' : 'text-gray-600'} transition-all`} 
+                                className={`w-6 h-6 ${interactions.isLiked ? 'fill-red-500 text-red-500' : 'text-gray-600'} transition-all`} 
                               />
                               {interactions.likes > 0 && (
                                 <span className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-[10px] font-bold ${
@@ -756,19 +752,19 @@ return (
                               e.stopPropagation();
                               handleJoinPlan(plan.id);
                             }}
-                            className={`flex items-center space-x-1 hover:bg-gray-50 px-3 py-2 rounded-lg transition-all ${
+                            className={`flex items-center gap-1 hover:bg-gray-50 px-2 py-2 rounded-lg transition-all ${
                               interactions.hasJoined ? 'bg-green-50' : ''
                             }`}
                           >
                             <Plus 
-                              className={`w-5 h-5 transition-colors ${
+                              className={`w-4 h-4 transition-colors ${
                                 interactions.hasJoined ? 'text-green-600' : 'text-gray-600'
                               }`} 
                             />
-                            <span className={`text-sm font-medium ${
+                            <span className={`text-xs font-medium hidden sm:inline ${
                               interactions.hasJoined ? 'text-green-600' : 'text-gray-600'
                             }`}>
-                              {interactions.hasJoined ? 'Unido' : 'Participar'}
+                              {interactions.hasJoined ? 'Unido' : 'Unirse'}
                             </span>
                           </button>
 
@@ -782,10 +778,10 @@ return (
                               });
                               cargarTodosLosComentarios(plan.id);
                             }}
-                            className="flex items-center space-x-1 hover:bg-gray-50 px-3 py-2 rounded-lg transition-colors"
+                            className="flex items-center gap-1 hover:bg-gray-50 px-2 py-2 rounded-lg transition-colors"
                           >
-                            <MessageCircle className="w-5 h-5 text-gray-600" />
-                            <span className="text-sm text-gray-600">
+                            <MessageCircle className="w-4 h-4 text-gray-600" />
+                            <span className="text-xs text-gray-600">
                               {plan.commentCount || 0}
                             </span>
                           </button>
@@ -795,12 +791,9 @@ return (
                               e.stopPropagation();
                               handleSharePlan(plan);
                             }}
-                            className="flex items-center space-x-1 hover:bg-gray-50 px-3 py-2 rounded-lg transition-colors cursor-pointer"
+                            className="flex items-center gap-1 hover:bg-gray-50 px-2 py-2 rounded-lg transition-colors cursor-pointer"
                           >
-                            <Share2 className="w-5 h-5 text-gray-600" />
-                            <span className="text-sm text-gray-600">
-                              {interactions.shares}
-                            </span>
+                            <Share2 className="w-4 h-4 text-gray-600" />
                           </button>
                         </div>
                       </div>
@@ -832,14 +825,10 @@ return (
 
         {activeTab === "flashplans" && (
           <div>
-            <div className="grid grid-cols-3 items-center mb-8">
-              <div></div>
+           <div className="mb-8">
               <h2 className="text-3xl font-bold text-gray-800 text-center mb-10">
                 Mis FlashPlans
               </h2>
-              <span className="justify-self-end bg-gradient-to-r from-pink-100 to-orange-100 text-pink-700 px-4 py-2 rounded-full text-sm font-bold border border-pink-200">
-                {flashPlans.length} flashplans
-              </span>
             </div>
 
             {flashPlans.length > 0 ? (
@@ -856,7 +845,6 @@ return (
                       onClick={() => setSelectedFlashPlan(flashPlan)}
                       className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100 hover:shadow-2xl transition-all duration-300 cursor-pointer group hover:scale-105"
                     >
-                      {/* Imagen principal del FlashPlan */}
                       <div className="relative w-full h-64 overflow-hidden">
                         {flashPlan.imageUrl ? (
                           <>
@@ -865,10 +853,8 @@ return (
                               alt="FlashPlan"
                               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                             />
-                            {/* Overlay con degradado */}
                             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
                             
-                            {/* Contenido de texto superpuesto si existe */}
                             {flashPlan.content && (
                               <div className="absolute bottom-0 left-0 right-0 p-4">
                                 <p className="text-white text-sm font-medium line-clamp-2">{flashPlan.content}</p>
@@ -883,7 +869,6 @@ return (
                           </div>
                         )}
 
-                        {/* Badge de tiempo restante */}
                         <div className="absolute top-3 right-3">
                           <span className={`px-3 py-1 rounded-full text-xs font-bold backdrop-blur-xl ${
                             hoursRemaining > 12 
@@ -899,10 +884,8 @@ return (
                         </div>
                       </div>
 
-                      {/* Información del FlashPlan */}
                       <div className="p-4 bg-gradient-to-br from-gray-50 to-white">
                         <div className="flex items-center justify-between">
-                          {/* Fecha de publicación */}
                           <div className="flex items-center gap-2 text-gray-600">
                             <Calendar className="w-4 h-4" />
                             <span className="text-xs font-medium">
@@ -913,7 +896,6 @@ return (
                             </span>
                           </div>
 
-                          {/* Contador de vistas con diseño destacado */}
                           <div className="flex items-center gap-2 bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1.5 rounded-full">
                             <Eye className="w-4 h-4 text-purple-600" />
                             <span className="text-sm font-bold text-purple-700">
@@ -924,7 +906,6 @@ return (
                         </div>
                       </div>
 
-                      {/* Indicador de clic */}
                       <div className="px-4 pb-3">
                         <div className="text-center">
                           <span className="text-xs text-gray-400 font-medium">Click para ver completo</span>
@@ -1014,11 +995,9 @@ return (
     />
   )}
 
-  {/* Modal de comentarios */}
   {modalComentarios.isOpen && (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white/10 backdrop-blur-2xl rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col border border-white/20">
-        {/* Header del Modal */}
         <div className="flex items-center justify-between p-6 border-b border-white/20">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 bg-gradient-to-r from-pink-500 to-purple-500 rounded-2xl flex items-center justify-center">
@@ -1037,9 +1016,7 @@ return (
           </button>
         </div>
 
-        {/* Contenido del Modal */}
         <div className="flex-1 overflow-hidden flex flex-col">
-          {/* Lista de Comentarios */}
           <div className="flex-1 overflow-y-auto p-6">
             {cargandoComentarios[modalComentarios.planId] ? (
               <div className="flex items-center justify-center py-12">
@@ -1104,7 +1081,6 @@ return (
             )}
           </div>
 
-          {/* Formulario para agregar comentario */}
           <div className="border-t border-white/20 p-6 bg-white/5">
             <form
               onSubmit={async (e) => {
@@ -1112,8 +1088,6 @@ return (
                 const texto = e.target.comentario.value.trim();
                 if (!texto) return;
 
-                // Aquí deberías tener la función agregarComentario disponible
-                // Si no la tienes en Perfil, necesitarás importarla o crearla
                 const planActual = planes.find(p => p.id === modalComentarios.planId);
                 if (planActual) {
                   await agregarComentario(modalComentarios.planId, texto);

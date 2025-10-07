@@ -4,6 +4,8 @@ import CrearCuenta from './componentes/CrearCuenta.jsx';
 import Home from './componentes/home.jsx';
 import CrearPerfil from './componentes/CrearPerfil.jsx';
 import Perfil from './componentes/Perfil.jsx';
+import MisFavoritos from './componentes/MisFavoritos.jsx';
+import MisParticipaciones from './componentes/MisParticipaciones.jsx';
 import VerifyEmailModal from './componentes/VerifyEmailModal';
 import { AuthProvider } from './context/AuthContext';
 import { auth, db } from './firebase/firebase-config.js';
@@ -45,7 +47,7 @@ function App() {
           verifyIntervalRef.current = null;
           setUser(auth.currentUser);
           setShowVerifyModal(false);
-          setCurrentView('crearPerfil'); // 👈 ahora va a crear perfil al verificar
+          setCurrentView('crearPerfil');
         }
       } catch (err) {
         console.warn('Error en verify polling:', err);
@@ -75,7 +77,7 @@ function App() {
       }
     } catch (err) {
       console.warn('Error al verificar perfil:', err);
-      setCurrentView('home'); // fallback
+      setCurrentView('home');
     }
   };
 
@@ -140,6 +142,8 @@ function App() {
   const showPerfil = () => setCurrentView('crearPerfil');
   const showHome = () => setCurrentView('home');
   const showVerPerfil = () => setCurrentView('perfil');
+  const showMisFavoritos = () => setCurrentView('favoritos');
+  const showMisParticipaciones = () => setCurrentView('participaciones');
 
   // 🔹 Pantalla de carga
   if (isLoading) {
@@ -166,7 +170,7 @@ function App() {
               setUser(auth.currentUser);
               setShowVerifyModal(false);
               stopVerifyPolling();
-              setCurrentView('crearPerfil'); // 👈 aquí también forzamos a crear perfil
+              setCurrentView('crearPerfil');
             }
           } catch (err) { console.warn('onVerifyCheck error:', err); }
         }}
@@ -187,8 +191,8 @@ function App() {
         {currentView === 'crearCuenta' && (
           <CrearCuenta
             onCrearCuentaSuccess={() => {
-              setShowVerifyModal(true); // 👈 abre modal de verificación
-              setCurrentView('login');  // vuelve al login hasta verificar
+              setShowVerifyModal(true);
+              setCurrentView('login');
             }}
             onShowLogin={showLogin}
           />
@@ -201,10 +205,18 @@ function App() {
             user={user} 
             onLogout={handleLogout} 
             onShowPerfil={() => setCurrentView("perfil")}
+            onShowFavoritos={showMisFavoritos}
+            onShowParticipaciones={showMisParticipaciones}
           />
         )}
         {currentView === 'perfil' && (
           <Perfil user={user} onBack={showHome} />
+        )}
+        {currentView === 'favoritos' && (
+          <MisFavoritos user={user} onBack={showHome} onShowPerfil={showVerPerfil} />
+        )}
+        {currentView === 'participaciones' && (
+          <MisParticipaciones user={user} onBack={showHome} onShowPerfil={showVerPerfil} />
         )}
       </div>
     </AuthProvider>

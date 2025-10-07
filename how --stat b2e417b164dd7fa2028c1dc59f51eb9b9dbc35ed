@@ -1,0 +1,13 @@
+[33mcommit fe3476689509175b10b4f5f03e3ded8e463a0606[m
+Author: yeraldyn <yeraldinaros48@gmail.com>
+Date:   Wed Sep 10 11:11:18 2025 -0500
+
+    ingreso por faceboock y gmail listos
+
+ package-lock.json               |   2 [31m-[m
+ package.json                    |   4 [32m+[m[31m-[m
+ src/App.jsx                     | 239 [32m+++++++++[m[31m-------------------------------[m
+ src/componentes/CrearCuenta.jsx |  43 [32m+++[m[31m-----[m
+ src/componentes/CrearPerfil.jsx |  14 [32m+[m[31m--[m
+ src/componentes/Perfil.jsx      | 184 [32m+++++++++++++++++++++[m[31m----------[m
+ 6 files changed, 196 insertions(+), 290 deletions(-)

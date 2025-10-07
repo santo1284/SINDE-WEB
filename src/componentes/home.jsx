@@ -63,6 +63,7 @@ import imageCompression from "browser-image-compression";
 import PerfilPublico from './PerfilPublico';
 import SuccessModal from './SuccessModal';
 
+
 // Utilidades para manejo de imágenes y datos
 const ImageUtils = {
   compressImage: (file, maxWidth = 800, quality = 0.8) => {
@@ -117,7 +118,7 @@ const useGeolocation = () => {
   return { location, error, getLocation };
 };
 
-const Home = ({ user, onLogout, onShowPerfil }) => {
+  const Home = ({ user, onLogout, onShowPerfil, onShowFavoritos, onShowParticipaciones }) => {
   const [planes, setPlanes] = useState([]);
   const [perfilData, setPerfilData] = useState(null);
   const [busqueda, setBusqueda] = useState('');
@@ -140,6 +141,8 @@ const Home = ({ user, onLogout, onShowPerfil }) => {
   isOpen: false,
   message: ''
 });
+const [planesFavoritos, setPlanesFavoritos] = useState([]);
+const [planesParticipando, setPlanesParticipando] = useState([]);
   
   // Estados para el comportamiento del header
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
@@ -279,6 +282,8 @@ const cancelarEliminacion = () => {
       setUnreadCount(snapshot.size);
     });
 
+
+    
     return () => unsubscribe();
   }, [user?.uid]);
 
@@ -356,6 +361,16 @@ useEffect(() => {
     );
 
     if (planesSinDatos.length === 0) return;
+
+    useEffect(() => {
+  if (!user?.uid || !planes.length) return;
+
+  const favoritos = planes.filter(plan => plan.likes?.includes(user.uid));
+  setPlanesFavoritos(favoritos);
+
+  const participando = planes.filter(plan => plan.participants?.includes(user.uid));
+  setPlanesParticipando(participando);
+}, [planes, user?.uid]);
 
    // console.log(`🔄 Actualizando ${planesSinDatos.length} planes...`);
 
@@ -737,66 +752,108 @@ const [perfilPublicoAbierto, setPerfilPublicoAbierto] = useState({
         </div>
       </header>
 
-      {/* MENU LATERAL MODERNO */}
-      {menuOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-end" onClick={() => setMenuOpen(false)}>
-          <div className="bg-white/10 backdrop-blur-2xl w-80 h-full shadow-2xl transform transition-transform duration-500 ease-out border-l border-white/20" onClick={(e) => e.stopPropagation()}>
-            <div className="p-6 border-b border-white/20">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-white">Mi Cuenta</h3>
-                <button onClick={() => setMenuOpen(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
-                  <X className="w-6 h-6 text-white" />
-                </button>
-              </div>
-
-              <div className="flex items-center gap-4 bg-white/10 backdrop-blur-xl rounded-2xl p-4">
-                {perfilData?.fotoURL ? (
-                  <img src={perfilData.fotoURL} alt="Avatar" className="w-16 h-16 rounded-2xl object-cover" />
-                ) : (
-                  <div className="w-16 h-16 bg-gradient-to-br from-pink-500 to-purple-600 rounded-2xl flex items-center justify-center text-white font-bold text-xl">
-                    {(perfilData?.nombre?.charAt(0) || user?.displayName?.charAt(0) || user?.email?.charAt(0) || "U").toUpperCase()}
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="font-bold text-white text-lg">{perfilData?.nombre || user?.displayName || user?.email?.split("@")[0] || "Usuario"}</p>
-                  <p className="text-white/60 text-sm">{user?.email}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6">
-              <nav className="space-y-3">
-                {[
-                  { icon: User, label: "Mi Perfil", action: onShowPerfil },
-                  { icon: Bell, label: "Notificaciones", action: () => setShowNotifications(true) },
-                  { icon: Heart, label: "Planes que me gustan", action: () => setShowLikedPlans(true) },
-    
-              
-                ].map((item, index) => (
-                  <button
-                    key={index}
-                    onClick={item.action}
-                    className="w-full flex items-center gap-4 text-left p-4 hover:bg-white/10 rounded-2xl transition-all duration-300 group"
-                  >
-                    <item.icon className="w-6 h-6 text-white/70 group-hover:text-pink-400 transition-colors" />
-                    <span className="text-white group-hover:text-pink-400 transition-colors font-medium">{item.label}</span>
-                  </button>
-                ))}
-
-                <div className="border-t border-white/20 pt-4 mt-6">
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-4 text-left p-4 hover:bg-red-500/20 rounded-2xl transition-all duration-300 text-red-400 hover:text-red-300 group"
-                  >
-                    <LogOut className="w-6 h-6" />
-                    <span className="font-bold">Cerrar Sesión</span>
-                  </button>
-                </div>
-              </nav>
-            </div>
-          </div>
+{/* MENU LATERAL MODERNO */}
+{menuOpen && (
+  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-end" onClick={() => setMenuOpen(false)}>
+    <div className="bg-white/10 backdrop-blur-2xl w-80 h-full shadow-2xl transform transition-transform duration-500 ease-out border-l border-white/20" onClick={(e) => e.stopPropagation()}>
+      <div className="p-6 border-b border-white/20">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-xl font-bold text-white">Mi Cuenta</h3>
+          <button onClick={() => setMenuOpen(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+            <X className="w-6 h-6 text-white" />
+          </button>
         </div>
-      )}
+
+        {/* TARJETA DE USUARIO CLICKEABLE */}
+        <button 
+          onClick={() => {
+            onShowPerfil();
+            setMenuOpen(false);
+          }}
+          className="w-full flex items-center gap-4 bg-white/10 backdrop-blur-xl rounded-2xl p-4 hover:bg-white/20 transition-all duration-300 group"
+        >
+          {perfilData?.fotoURL ? (
+            <img src={perfilData.fotoURL} alt="Avatar" className="w-16 h-16 rounded-2xl object-cover ring-2 ring-white/30 group-hover:ring-pink-400 transition-all" />
+          ) : (
+            <div className="w-16 h-16 bg-gradient-to-br from-pink-500 to-purple-600 rounded-2xl flex items-center justify-center text-white font-bold text-xl ring-2 ring-white/30 group-hover:ring-pink-400 transition-all">
+              {(perfilData?.nombre?.charAt(0) || user?.displayName?.charAt(0) || user?.email?.charAt(0) || "U").toUpperCase()}
+            </div>
+          )}
+          <div className="min-w-0 flex-1 text-left">
+            <p className="font-bold text-white text-lg group-hover:text-pink-300 transition-colors truncate">
+              {perfilData?.nombre || user?.displayName || user?.email?.split("@")[0] || "Usuario"}
+            </p>
+            <p className="text-white/60 text-sm truncate">{user?.email}</p>
+            <p className="text-xs text-pink-400 font-medium mt-1">Ver mi perfil →</p>
+          </div>
+        </button>
+      </div>
+
+      <div className="p-6">
+        <nav className="space-y-3">
+          {/* ELIMINADO: Botón "Mi Perfil" */}
+
+          <button
+            onClick={() => { setShowNotifications(true); setMenuOpen(false); }}
+            className="w-full flex items-center gap-4 text-left p-4 hover:bg-white/10 rounded-2xl transition-all duration-300 group relative"
+          >
+            <Bell className="w-6 h-6 text-white/70 group-hover:text-pink-400 transition-colors" />
+            <span className="text-white group-hover:text-pink-400 transition-colors font-medium flex-1">Notificaciones</span>
+            {unreadCount > 0 && (
+              <span className="bg-gradient-to-r from-pink-500 to-purple-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+
+          {/* MIS FAVORITOS */}
+          <button
+            onClick={() => { 
+              onShowFavoritos(); 
+              setMenuOpen(false); 
+            }}
+            className="w-full flex items-center gap-4 text-left p-4 hover:bg-white/10 rounded-2xl transition-all duration-300 group relative"
+          >
+            <Heart className="w-6 h-6 text-white/70 group-hover:text-red-400 transition-colors" />
+            <span className="text-white group-hover:text-red-400 transition-colors font-medium flex-1">Mis Favoritos</span>
+            {planesFavoritos.length > 0 && (
+              <span className="bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                {planesFavoritos.length}
+              </span>
+            )}
+          </button>
+
+          {/* MIS PARTICIPACIONES */}
+          <button
+            onClick={() => { 
+              onShowParticipaciones(); 
+              setMenuOpen(false); 
+            }}
+            className="w-full flex items-center gap-4 text-left p-4 hover:bg-white/10 rounded-2xl transition-all duration-300 group relative"
+          >
+            <Check className="w-6 h-6 text-white/70 group-hover:text-green-400 transition-colors" />
+            <span className="text-white group-hover:text-green-400 transition-colors font-medium flex-1">Mis Participaciones</span>
+            {planesParticipando.length > 0 && (
+              <span className="bg-gradient-to-r from-green-500 to-emerald-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                {planesParticipando.length}
+              </span>
+            )}
+          </button>
+
+          <div className="border-t border-white/20 pt-4 mt-6">
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-4 text-left p-4 hover:bg-red-500/20 rounded-2xl transition-all duration-300 text-red-400 hover:text-red-300 group"
+            >
+              <LogOut className="w-6 h-6" />
+              <span className="font-bold">Cerrar Sesión</span>
+            </button>
+          </div>
+        </nav>
+      </div>
+    </div>
+  </div>
+)}
 
       <main className="relative z-10 max-w-7xl mx-auto px-4 lg:px-8 py-8" style={{ paddingTop: '180px' }}> 
 
